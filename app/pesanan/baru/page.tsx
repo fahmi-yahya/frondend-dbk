@@ -1,9 +1,9 @@
+/* eslint-disable @next/next/no-img-element */
 "use client";
 
 import { useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import {
-  ChefHat,
   Eye,
   EyeOff,
   MapPin,
@@ -21,7 +21,7 @@ const supList = ["Bakso", "Kimlo"];
 const esList = ["Es Teh", "Es Buah", "Es Campur"];
 
 // Identitas usaha & nomor pesanan yang tampil di ringkasan / hasil cetak
-const usaha = { nama: "Dapur Nusa", alamat: "Jl. Contoh No. 1" };
+const usaha = { nama: "DBK", alamat: "Jl. Contoh No. 1" };
 const noPesanan = "#K186";
 
 const fmt = (d: string) =>
@@ -119,9 +119,12 @@ function Ringkasan({
   return (
     <article className="text-sm leading-relaxed text-neutral-900">
       {/* Logo */}
-      <div className="grid size-12 place-items-center rounded-xl bg-neutral-900 text-white">
-        <ChefHat className="size-6" />
-      </div>
+      <img
+        src="/logo-dbk.png"
+        alt="DBK Catering Service"
+        loading="eager"
+        className="h-14 w-auto"
+      />
 
       {/* Info utama */}
       <div className="mt-6 flex flex-wrap justify-between gap-x-6 gap-y-3">

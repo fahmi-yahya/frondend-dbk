@@ -380,12 +380,7 @@ export default function MenuPaketPage() {
           </span>
         </div>
         <div className="flex items-center gap-3">
-          <Link
-            href="/pesanan/baru"
-            className="rounded-lg bg-white px-3 py-2 text-sm font-medium text-black hover:bg-neutral-200"
-          >
-            + Pesanan Baru
-          </Link>
+         
           <button
             aria-label="Notifikasi"
             className="grid size-9 place-items-center rounded-lg border border-white/10 text-neutral-400 hover:text-white"

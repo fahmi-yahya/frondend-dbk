@@ -64,9 +64,9 @@ export const o = (
 });
 
 export const statusStyle: Record<Order["status"], string> = {
-  Lunas: "bg-green-500/15 text-green-400",
-  DP: "bg-amber-500/15 text-amber-400",
-  Batal: "bg-red-500/15 text-red-400",
+  Lunas: "bg-green-500/15 text-green-600 dark:text-green-400",
+  DP: "bg-amber-500/15 text-amber-600 dark:text-amber-400",
+  Batal: "bg-red-500/15 text-red-600 dark:text-red-400",
 };
 
 // Ubah satu pesanan menjadi data untuk ringkasan / detail pesanan
@@ -98,7 +98,7 @@ export const detailDari = (od: Order): DataRingkasan => {
   };
 };
 
-const label = "font-mono text-xs text-neutral-400";
+const label = "font-mono text-xs text-[var(--text-muted)]";
 
 /* ------------------------------------------------------------------ */
 /* Detail pesanan (muncul saat pesanan diklik)                          */
@@ -133,12 +133,22 @@ export function DetailPesanan({
             role="dialog"
             aria-modal="true"
             aria-label={`Detail pesanan ${order.id}`}
-            className="flex max-h-[92vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#141414] text-neutral-100"
+            className="flex max-h-[92vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border"
+            style={{
+              borderColor: "var(--border)",
+              background: "var(--bg-surface)",
+              color: "var(--text-base)",
+            }}
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex shrink-0 items-start justify-between gap-3 border-b border-white/10 px-5 py-4">
+            <div
+              className="flex shrink-0 items-start justify-between gap-3 border-b px-5 py-4"
+              style={{ borderColor: "var(--border)" }}
+            >
               <div>
-                <p className="text-sm text-neutral-200">Detail Pesanan</p>
+                <p className="text-sm" style={{ color: "var(--text-base)" }}>
+                  Detail Pesanan
+                </p>
                 <p className={`${label} mt-1`}>
                   {order.id} · Total Rp {order.amount.toLocaleString("id-ID")}
                 </p>
@@ -151,7 +161,15 @@ export function DetailPesanan({
                 </span>
                 <button
                   onClick={() => window.print()}
-                  className="flex items-center gap-1.5 rounded-lg border border-white/10 px-2.5 py-1.5 text-xs text-neutral-300 hover:bg-white/10"
+                  className="flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs transition-colors"
+                  style={{
+                    borderColor: "var(--border)",
+                    color: "var(--text-muted)",
+                  }}
+                  onMouseEnter={(e) =>
+                    (e.currentTarget.style.background = "var(--bg-muted)")
+                  }
+                  onMouseLeave={(e) => (e.currentTarget.style.background = "")}
                 >
                   <Printer className="size-3.5" /> Cetak
                 </button>
@@ -159,14 +177,30 @@ export function DetailPesanan({
                   onClick={onClose}
                   autoFocus
                   aria-label="Tutup"
-                  className="grid size-8 place-items-center rounded-lg border border-white/10 text-neutral-400 hover:text-white"
+                  className="grid size-8 place-items-center rounded-lg border transition-colors"
+                  style={{
+                    borderColor: "var(--border)",
+                    color: "var(--text-muted)",
+                  }}
+                  onMouseEnter={(e) =>
+                    (e.currentTarget.style.color = "var(--text-base)")
+                  }
+                  onMouseLeave={(e) =>
+                    (e.currentTarget.style.color = "var(--text-muted)")
+                  }
                 >
                   <X className="size-4" />
                 </button>
               </div>
             </div>
-            <div className="min-h-0 overflow-y-auto overscroll-contain bg-neutral-100 p-4 sm:p-6">
-              <div className="rounded-xl bg-white p-6 shadow-sm sm:p-8">
+            <div
+              className="min-h-0 overflow-y-auto overscroll-contain p-4 sm:p-6"
+              style={{ background: "var(--bg-surface2)" }}
+            >
+              <div
+                className="rounded-xl p-6 shadow-sm sm:p-8"
+                style={{ background: "#fff" }}
+              >
                 <RingkasanPesanan data={data} sembunyikanKosong />
               </div>
             </div>

@@ -1,11 +1,11 @@
+/* eslint-disable @next/next/no-img-element */
 "use client";
 
 import { useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
-import { ChefHat } from "lucide-react";
 
 // Identitas usaha yang tampil di ringkasan / hasil cetak
-export const usaha = { nama: "Dapur Nusa", alamat: "Jl. Contoh No. 1" };
+export const usaha = { nama: "DBK", alamat: "Jl. Contoh No. 1" };
 
 /* ------------------------------------------------------------------ */
 /* Format tanggal                                                      */
@@ -129,9 +129,12 @@ export function RingkasanPesanan({
   return (
     <article className="text-sm leading-relaxed text-neutral-900">
       {/* Logo */}
-      <div className="grid size-12 place-items-center rounded-xl bg-neutral-900 text-white">
-        <ChefHat className="size-6" />
-      </div>
+      <img
+        src="/logo-dbk.png"
+        alt="DBK Catering Service"
+        loading="eager"
+        className="h-14 w-auto"
+      />
 
       {/* Info utama */}
       <div className="mt-6 flex flex-wrap justify-between gap-x-6 gap-y-3">

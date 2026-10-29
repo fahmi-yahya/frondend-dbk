@@ -20,6 +20,8 @@ import {
   ArrowDownRight,
   Printer,
   X,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 
 const stats = [
@@ -578,10 +580,116 @@ function DetailPesanan({
   );
 }
 
+// Jumlah baris per halaman. Naikkan (mis. 10) kalau datanya sudah banyak.
+const PER_HAL = 3;
+
+function Pagination({
+  total,
+  page,
+  perPage,
+  onPage,
+}: {
+  total: number;
+  page: number;
+  perPage: number;
+  onPage: (n: number) => void;
+}) {
+  const pages = Math.ceil(total / perPage);
+  if (pages <= 1) return null;
+
+  const nomor: (number | "…")[] = [];
+  for (let n = 1; n <= pages; n++) {
+    if (pages <= 5 || n === 1 || n === pages || Math.abs(n - page) <= 1)
+      nomor.push(n);
+    else if (nomor[nomor.length - 1] !== "…") nomor.push("…");
+  }
+  const tombol =
+    "grid size-8 place-items-center rounded-lg text-xs transition-colors disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent";
+
+  return (
+    <nav
+      aria-label="Navigasi halaman"
+      className="mt-4 flex flex-col items-center justify-between gap-3 text-xs text-neutral-500 sm:flex-row"
+    >
+      <p>
+        Menampilkan {(page - 1) * perPage + 1}–{Math.min(page * perPage, total)}{" "}
+        dari {total}
+      </p>
+      <div className="flex items-center gap-1">
+        <button
+          type="button"
+          onClick={() => onPage(page - 1)}
+          disabled={page === 1}
+          aria-label="Halaman sebelumnya"
+          className={`${tombol} text-neutral-400 hover:bg-white/5`}
+        >
+          <ChevronLeft className="size-4" />
+        </button>
+        {nomor.map((n, i) =>
+          n === "…" ? (
+            <span key={`titik-${i}`} className="px-1">
+              …
+            </span>
+          ) : (
+            <button
+              key={n}
+              type="button"
+              onClick={() => onPage(n)}
+              aria-current={n === page ? "page" : undefined}
+              className={`${tombol} ${
+                n === page
+                  ? "bg-white/10 text-neutral-100"
+                  : "text-neutral-400 hover:bg-white/5"
+              }`}
+            >
+              {n}
+            </button>
+          ),
+        )}
+        <button
+          type="button"
+          onClick={() => onPage(page + 1)}
+          disabled={page === pages}
+          aria-label="Halaman berikutnya"
+          className={`${tombol} text-neutral-400 hover:bg-white/5`}
+        >
+          <ChevronRight className="size-4" />
+        </button>
+      </div>
+    </nav>
+  );
+}
+
 export default function DashboardPage() {
   const [rb, setRb] = useState(3);
   const [sel, setSel] = useState<Order | null>(null);
+  const [hal, setHal] = useState(1);
+  const [halMenu, setHalMenu] = useState(1);
   const cur = periods[rb];
+
+  const halOrder = Math.min(
+    hal,
+    Math.max(1, Math.ceil(cur.orders.length / PER_HAL)),
+  );
+  const orderTampil = cur.orders.slice(
+    (halOrder - 1) * PER_HAL,
+    halOrder * PER_HAL,
+  );
+  const halMenuAman = Math.min(
+    halMenu,
+    Math.max(1, Math.ceil(products.length / PER_HAL)),
+  );
+  const menuTampil = products.slice(
+    (halMenuAman - 1) * PER_HAL,
+    halMenuAman * PER_HAL,
+  );
+  // Ganti periode (batang grafik) -> kembali ke halaman 1
+  const pilihPeriode = (i: number) => {
+    if (i !== rb) {
+      setRb(i);
+      setHal(1);
+    }
+  };
 
   return (
     <AppShell active="Dashboard">
@@ -676,8 +784,8 @@ export default function DashboardPage() {
                   <div
                     key={r.label}
                     className="flex flex-1 items-end"
-                    onMouseEnter={() => setRb(i)}
-                    onClick={() => setRb(i)}
+                    onMouseEnter={() => pilihPeriode(i)}
+                    onClick={() => pilihPeriode(i)}
                   >
                     <div
                       className={`relative w-full rounded-lg transition-all ${
@@ -712,7 +820,7 @@ export default function DashboardPage() {
           </section>
 
           <section className={card}>
-            <div className="flex items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <p className="text-sm text-neutral-300">Pesanan {cur.label}</p>
                 <p className={`${label} mt-1`}>
@@ -729,7 +837,7 @@ export default function DashboardPage() {
               <table className="w-full table-fixed text-sm">
                 <thead>
                   <tr className="bg-white/5 text-left text-[11px] uppercase text-neutral-400">
-                    <th className="w-36 px-3 py-2.5 font-medium first:rounded-l-lg sm:w-44">
+                    <th className="w-28 px-3 py-2.5 font-medium first:rounded-l-lg sm:w-44">
                       Tanggal
                     </th>
                     <th className="px-3 py-2.5 font-medium last:rounded-r-lg">
@@ -738,7 +846,7 @@ export default function DashboardPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-white/5">
-                  {cur.orders.map((od) => (
+                  {orderTampil.map((od) => (
                     <tr
                       key={od.id}
                       tabIndex={0}
@@ -764,6 +872,12 @@ export default function DashboardPage() {
             <p className="mt-3 text-xs text-neutral-500">
               Klik salah satu baris untuk melihat detail pesanan.
             </p>
+            <Pagination
+              total={cur.orders.length}
+              page={halOrder}
+              perPage={PER_HAL}
+              onPage={setHal}
+            />
           </section>
         </div>
 
@@ -776,8 +890,9 @@ export default function DashboardPage() {
                 Lihat Semua
               </button>
             </div>
-            <div className="mt-4 overflow-x-auto">
-              <table className="w-full min-w-[480px] text-sm">
+            {/* Layar lebar: tabel */}
+            <div className="mt-4 hidden overflow-x-auto lg:block">
+              <table className="w-full text-sm">
                 <thead>
                   <tr className="bg-white/5 text-left text-[11px] uppercase text-neutral-400">
                     {[
@@ -798,7 +913,7 @@ export default function DashboardPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-white/5">
-                  {products.map((p) => (
+                  {menuTampil.map((p) => (
                     <tr key={p.name}>
                       <td className="px-3 py-3">{p.name}</td>
                       <td className="px-3 py-3 font-mono">{p.income}</td>
@@ -822,6 +937,44 @@ export default function DashboardPage() {
                 </tbody>
               </table>
             </div>
+
+            {/* Layar kecil: satu kartu per menu, tanpa geser kiri-kanan */}
+            <ul className="mt-4 divide-y divide-white/5 lg:hidden">
+              {menuTampil.map((p) => (
+                <li key={p.name} className="py-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <p className="min-w-0 break-words text-sm font-medium">
+                      {p.name}
+                    </p>
+                    <span className="shrink-0 font-mono text-sm">
+                      {p.income}
+                    </span>
+                  </div>
+                  <p className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 font-mono text-xs text-neutral-500">
+                    <span>{p.orders} pesanan</span>
+                    <span>{p.portions} porsi</span>
+                    <span>★ {p.rating}</span>
+                    <span
+                      className={`flex items-center gap-0.5 ${p.growth > 0 ? "text-indigo-300" : "text-red-400"}`}
+                    >
+                      {p.growth > 0 ? (
+                        <ArrowUpRight className="size-3.5" />
+                      ) : (
+                        <ArrowDownRight className="size-3.5" />
+                      )}
+                      {Math.abs(p.growth)}%
+                    </span>
+                  </p>
+                </li>
+              ))}
+            </ul>
+
+            <Pagination
+              total={products.length}
+              page={halMenuAman}
+              perPage={PER_HAL}
+              onPage={setHalMenu}
+            />
           </section>
         </div>
       </div>
