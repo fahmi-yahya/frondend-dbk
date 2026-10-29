@@ -765,7 +765,7 @@ export default function DashboardPage() {
             </p>
             <p className="mt-2 font-mono text-xs">
               <span className="text-red-500">2,5% ↓</span>{" "}
-              <span className="text-neutral-500">dibanding periode lalu</span>
+              <span className="text-neutral-500">Dibanding periode lalu</span>
             </p>
             <div className="relative mt-10 h-56">
               {[0, 1, 2, 3].map((i) => (
