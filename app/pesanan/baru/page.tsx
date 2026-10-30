@@ -1,9 +1,9 @@
-/* eslint-disable @next/next/no-img-element */
 "use client";
 
-import { useState, useSyncExternalStore } from "react";
-import { createPortal } from "react-dom";
+import { useEffect, useState } from "react";
+import axios from "axios";
 import {
+  Check,
   Eye,
   EyeOff,
   MapPin,
@@ -14,24 +14,60 @@ import {
   X,
 } from "lucide-react";
 import AppShell from "@/components/AppShell";
+import {
+  AreaCetak,
+  RingkasanPesanan,
+  hariDari,
+  tanggalLengkap,
+  usaha,
+  type DataRingkasan,
+} from "@/components/RingkasanPesanan";
+import { api } from "@/lib/api";
+import { esList, menuList, rupiah, supList } from "@/data/menu";
 
-// Ubah daftar pilihan di bawah ini sesuai menu usahamu
-const paketList = ["Paket Hemat", "Paket Standar", "Paket Premium"];
-const supList = ["Bakso", "Kimlo"];
-const esList = ["Es Teh", "Es Buah", "Es Campur"];
+// Daftar paket diambil dari API Laravel (GET /paket).
+// Kalau API belum jalan, dipakai daftar cadangan dari data/menu.ts.
 
-// Identitas usaha & nomor pesanan yang tampil di ringkasan / hasil cetak
-const usaha = { nama: "DBK", alamat: "Jl. Contoh No. 1" };
-const noPesanan = "#K186";
+const formKosong = {
+  tanggal: "",
+  nama: "",
+  hp: "",
+  lokasi: "",
+  gps: "",
+  jam: "",
+  paket: "",
+  sup: "",
+  es: "",
+  dataTambahan: "",
+  jumlah: "",
+  meja: "",
+  taplak: "",
+  waiters: "",
+  keterangan: "",
+};
+type Form = typeof formKosong;
+type PaketItem = { id?: number; nama: string; harga: number; isi: string[] };
 
-const fmt = (d: string) =>
-  d
-    ? new Date(`${d}T00:00:00`).toLocaleDateString("id-ID", {
-        day: "2-digit",
-        month: "long",
-        year: "numeric",
-      })
-    : "-";
+// "25000", "25.000", atau "25000.00" -> 25000
+const angka = (v: string | number) =>
+  parseInt(
+    String(v)
+      .replace(/[.,]\d{1,2}$/, "")
+      .replace(/\D/g, ""),
+    10,
+  ) || 0;
+
+// Ambil pesan error yang enak dibaca dari respons Laravel
+const pesanError = (err: unknown) => {
+  if (axios.isAxiosError(err)) {
+    const e = err.response?.data?.errors as
+      | Record<string, string[]>
+      | undefined;
+    if (e) return Object.values(e)[0][0]; // error validasi (422)
+    return err.response?.data?.message ?? "Tidak bisa terhubung ke server.";
+  }
+  return "Terjadi kesalahan.";
+};
 
 const card = "rounded-2xl border border-white/10 bg-[#141414] p-5";
 const inp =
@@ -56,290 +92,84 @@ function Field({
   );
 }
 
-/* ------------------------------------------------------------------ */
-/* Ringkasan pesanan (dipakai untuk preview di layar DAN untuk cetak)  */
-/* ------------------------------------------------------------------ */
-
-type Pasang = { label: string; nilai: string };
-type DataRingkasan = {
-  noPesanan: string;
-  tanggal: string;
-  jam: string;
-  nama: string;
-  hp: string;
-  lokasi: string;
-  gps: string;
-  menu: Pasang[];
-  jumlah: string;
-  kebutuhan: Pasang[];
-  bonus: string[];
-  keterangan: string;
-};
-
-// Tanda "-" untuk data yang belum diisi (hanya tampil di layar)
-const strip = <span className="text-neutral-300">-</span>;
-const nilai = (v: string) => (v ? v : strip);
-
-// Label kecil abu-abu di atas, nilai di bawahnya
-function Rincian({
-  label,
-  children,
-  kanan = false,
-}: {
-  label: string;
-  children: React.ReactNode;
-  kanan?: boolean;
-}) {
-  return (
-    <div className={kanan ? "text-right" : ""}>
-      <p className="text-xs text-neutral-500">{label}</p>
-      <p className="mt-1 break-words">{children}</p>
-    </div>
-  );
-}
-
-function Ringkasan({
-  data: d,
-  cetak = false,
-}: {
-  data: DataRingkasan;
-  cetak?: boolean;
-}) {
-  // Di layar semua bagian tampil (kosong = "-").
-  // Di kertas, bagian yang kosong disembunyikan.
-  const ada = (v: string) => !cetak || v !== "";
-
-  const peta = d.gps.startsWith("http") ? d.gps : "";
-  const bonus = d.bonus.join(", ");
-  const menu = d.menu.filter((m) => ada(m.nilai));
-  const kebutuhan = d.kebutuhan.filter((k) => ada(k.nilai));
-  const adaKotak = kebutuhan.length > 0 || ada(d.jumlah);
-  const adaKiri = ada(d.lokasi) || ada(peta) || ada(bonus);
-
-  return (
-    <article className="text-sm leading-relaxed text-neutral-900">
-      {/* Logo */}
-      <img
-        src="/logo-dbk.png"
-        alt="DBK Catering Service"
-        loading="eager"
-        className="h-14 w-auto"
-      />
-
-      {/* Info utama */}
-      <div className="mt-6 flex flex-wrap justify-between gap-x-6 gap-y-3">
-        {ada(d.tanggal) && (
-          <Rincian label="Hari / Tanggal">{nilai(d.tanggal)}</Rincian>
-        )}
-        {ada(d.jam) && <Rincian label="Jam Acara">{nilai(d.jam)}</Rincian>}
-        <Rincian label="No. Pesanan" kanan>
-          <span className="font-mono">{d.noPesanan}</span>
-        </Rincian>
-      </div>
-
-      {/* Dari */}
-      <div className="mt-6">
-        <p className="text-xs text-neutral-500">Dari:</p>
-        <p className="mt-1.5 text-base font-medium">{usaha.nama}</p>
-        <p className="text-xs text-neutral-500">{usaha.alamat}</p>
-      </div>
-
-      {/* Untuk */}
-      {(ada(d.nama) || ada(d.hp)) && (
-        <div className="mt-5">
-          <p className="text-xs text-neutral-500">Untuk:</p>
-          <p className="mt-1.5 break-words text-base font-medium">
-            {nilai(d.nama)}
-          </p>
-          {ada(d.hp) && (
-            <p className="text-xs text-neutral-500">{d.hp || "-"}</p>
-          )}
-        </div>
-      )}
-
-      {/* Tabel menu */}
-      {menu.length > 0 && (
-        <table className="mt-6 w-full table-fixed border-collapse">
-          <thead>
-            <tr>
-              <th className="w-2/5 rounded-l-lg bg-neutral-50 px-3 py-2.5 text-left font-normal text-neutral-600">
-                Item
-              </th>
-              <th className="rounded-r-lg bg-neutral-50 px-3 py-2.5 text-left font-normal text-neutral-600">
-                Pilihan
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {menu.map((m) => (
-              <tr key={m.label} className="break-inside-avoid">
-                <td className="border-b border-neutral-100 px-3 py-3 align-top text-neutral-600">
-                  {m.label}
-                </td>
-                <td className="whitespace-pre-line break-words border-b border-neutral-100 px-3 py-3 align-top">
-                  {nilai(m.nilai)}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-
-      {/* Lokasi & kebutuhan acara */}
-      {(adaKiri || adaKotak) && (
-        <div className="mt-6 grid grid-cols-2 items-start gap-6 break-inside-avoid">
-          <div className="min-w-0 space-y-4">
-            {ada(d.lokasi) && (
-              <Rincian label="Lokasi Acara">{nilai(d.lokasi)}</Rincian>
-            )}
-            {ada(peta) && (
-              <Rincian label="Peta">
-                {peta ? (
-                  cetak ? (
-                    <span className="break-all">{peta}</span>
-                  ) : (
-                    <a
-                      href={peta}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-orange-600 underline"
-                    >
-                      Buka peta
-                    </a>
-                  )
-                ) : (
-                  strip
-                )}
-              </Rincian>
-            )}
-            {ada(bonus) && <Rincian label="Bonus">{nilai(bonus)}</Rincian>}
-          </div>
-
-          {adaKotak && (
-            <div className="col-start-2 overflow-hidden rounded-xl border border-neutral-200">
-              {kebutuhan.map((k) => (
-                <div
-                  key={k.label}
-                  className="flex justify-between gap-3 px-4 py-2.5"
-                >
-                  <span className="text-neutral-500">{k.label}</span>
-                  <span className="min-w-0 break-words text-right">
-                    {nilai(k.nilai)}
-                  </span>
-                </div>
-              ))}
-              {ada(d.jumlah) && (
-                <div className="flex justify-between gap-3 bg-neutral-50 px-4 py-3 font-medium">
-                  <span>Jumlah Pesanan</span>
-                  <span className="min-w-0 break-words text-right">
-                    {nilai(d.jumlah)}
-                  </span>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Catatan */}
-      <div className="mt-6">
-        <p className="text-xs text-neutral-500">Catatan</p>
-        {ada(d.keterangan) && (
-          <p className="mt-1 whitespace-pre-line break-words">
-            {nilai(d.keterangan)}
-          </p>
-        )}
-        <p className="mt-2 text-neutral-600">
-          Terima kasih atas pesanan Anda! Kami siap melayani acara Anda.
-        </p>
-      </div>
-    </article>
-  );
-}
-
-/*
-  Area cetak dipasang langsung di <body> lewat portal, supaya hasil cetak
-  tidak terpengaruh sidebar / layout AppShell. Di layar area ini tersembunyi.
-*/
-const subscribeKosong = () => () => {};
-
-function AreaCetak({ children }: { children: React.ReactNode }) {
-  const siap = useSyncExternalStore(
-    subscribeKosong,
-    () => true,
-    () => false,
-  );
-  if (!siap) return null;
-  return createPortal(
-    <div id="area-cetak" className="hidden print:block">
-      {children}
-    </div>,
-    document.body,
-  );
-}
-
-// Saat mencetak: sembunyikan semua elemen kecuali #area-cetak, kertas A4.
-// print-color-adjust supaya kotak gelap (logo) & latar abu-abu ikut tercetak.
-const cssCetak = `
-@page { size: A4; margin: 14mm; }
-@media print {
-  html, body { background: #fff !important; }
-  body > *:not(#area-cetak) { display: none !important; }
-  #area-cetak, #area-cetak * {
-    -webkit-print-color-adjust: exact;
-    print-color-adjust: exact;
-  }
-}
-`;
-
-/* ------------------------------------------------------------------ */
-/* Halaman                                                             */
-/* ------------------------------------------------------------------ */
-
 export default function PesananBaruPage() {
-  const [form, setForm] = useState({
-    tanggal: "",
-    nama: "",
-    hp: "",
-    lokasi: "",
-    gps: "",
-    jam: "",
-    paket: "",
-    sup: "",
-    es: "",
-    dataTambahan: "",
-    jumlah: "",
-    meja: "",
-    taplak: "",
-    waiters: "",
-    keterangan: "",
-  });
+  const [form, setForm] = useState<Form>(formKosong);
   const [bonus, setBonus] = useState<string[]>([]);
   const [bonusInput, setBonusInput] = useState("");
   const [preview, setPreview] = useState(true);
   const [msg, setMsg] = useState("");
 
-  const set = <K extends keyof typeof form>(k: K, v: (typeof form)[K]) =>
-    setForm((f) => ({ ...f, [k]: v }));
+  const [daftarPaket, setDaftarPaket] = useState<PaketItem[]>(menuList);
+  const [sumberPaket, setSumberPaket] = useState<"memuat" | "api" | "lokal">(
+    "memuat",
+  );
+  const [menyimpan, setMenyimpan] = useState(false);
+  // Terisi setelah pesanan berhasil disimpan ke server
+  const [tersimpan, setTersimpan] = useState<{
+    dbId: number;
+    no: string;
+  } | null>(null);
 
-  const hari = form.tanggal
-    ? new Date(`${form.tanggal}T00:00:00`).toLocaleDateString("id-ID", {
-        weekday: "long",
+  // Ambil paket + isi menunya dari API
+  useEffect(() => {
+    api
+      .get("/paket")
+      .then((res) => {
+        const list =
+          (Array.isArray(res.data) ? res.data : res.data?.data) ?? [];
+        setDaftarPaket(
+          list.map(
+            (p: {
+              id: number;
+              nama_paket: string;
+              harga_paket: string;
+              menu?: { nama_menu: string }[];
+            }) => ({
+              id: p.id,
+              nama: p.nama_paket,
+              harga: angka(p.harga_paket),
+              isi: (p.menu ?? []).map((m) => m.nama_menu),
+            }),
+          ),
+        );
+        setSumberPaket("api");
       })
-    : "";
+      .catch(() => setSumberPaket("lokal"));
+  }, []);
+
+  const set = <K extends keyof Form>(k: K, v: Form[K]) =>
+    setForm((f) => ({ ...f, [k]: v }));
+  // Pintasan untuk input teks: {...f("nama")}
+  const f = (k: keyof Form) => ({
+    value: form[k],
+    onChange: (
+      e: React.ChangeEvent<
+        HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement
+      >,
+    ) => set(k, e.target.value),
+  });
+
+  const hari = hariDari(form.tanggal);
+  const paketMenu = daftarPaket.find((p) => p.nama === form.paket);
 
   // Data ringkasan: nilai kosong ditulis "" (di layar tampil "-",
   // di kertas bagian itu disembunyikan)
   const data: DataRingkasan = {
-    noPesanan,
-    tanggal: hari ? `${hari}, ${fmt(form.tanggal)}` : "",
+    noPesanan: tersimpan?.no ?? "Baru",
+    tanggal: tanggalLengkap(form.tanggal),
     jam: form.jam,
     nama: form.nama,
     hp: form.hp,
     lokasi: form.lokasi,
     gps: form.gps,
     menu: [
-      { label: "Paket", nilai: form.paket },
+      {
+        label: "Paket",
+        nilai: paketMenu
+          ? `${paketMenu.nama} — ${rupiah(paketMenu.harga)} / porsi`
+          : form.paket,
+      },
+      { label: "Isi Paket", nilai: paketMenu ? paketMenu.isi.join("\n") : "" },
       { label: "Pilihan Sup", nilai: form.sup },
       { label: "Pilihan Es", nilai: form.es },
       { label: "Data Tambahan", nilai: form.dataTambahan },
@@ -377,6 +207,69 @@ export default function PesananBaruPage() {
           "Gagal mengambil lokasi. Izinkan akses lokasi, atau tempel link Google Maps.",
         ),
     );
+  };
+
+  // Simpan pesanan ke server (baru: POST, sudah tersimpan: PUT)
+  const simpanPesanan = async () => {
+    const kurang = !form.tanggal
+      ? "tanggal"
+      : !form.nama
+        ? "nama"
+        : !form.hp
+          ? "no HP"
+          : !form.lokasi
+            ? "lokasi"
+            : !paketMenu
+              ? "paket"
+              : !(Number(form.jumlah) >= 1)
+                ? "jumlah pesanan"
+                : "";
+    if (kurang) return setMsg(`Isi ${kurang} dulu.`);
+    if (!paketMenu || paketMenu.id === undefined)
+      return setMsg(
+        "Daftar paket belum dari API, pesanan belum bisa disimpan.",
+      );
+
+    setMenyimpan(true);
+    try {
+      const payload = {
+        tanggal: form.tanggal,
+        nama: form.nama,
+        hp: form.hp,
+        lokasi: form.lokasi,
+        gps: form.gps || null,
+        jam_acara: form.jam || null,
+        id_paket: paketMenu.id,
+        pilihan_sup: form.sup || null,
+        pilihan_es: form.es || null,
+        data_tambahan: form.dataTambahan || null,
+        jumlah_pesanan: Number(form.jumlah),
+        jumlah_meja: form.meja === "" ? null : Number(form.meja),
+        warna_taplak: form.taplak || null,
+        waiters: form.waiters === "" ? null : Number(form.waiters),
+        bonus,
+        keterangan: form.keterangan || null,
+      };
+      const res = tersimpan
+        ? await api.put(`/pesanan/${tersimpan.dbId}`, payload)
+        : await api.post("/pesanan", payload);
+      const p = res.data?.data ?? res.data;
+      setTersimpan({ dbId: p.db_id, no: p.id });
+      setMsg(`Pesanan ${p.id} tersimpan.`);
+    } catch (err) {
+      setMsg(pesanError(err));
+    } finally {
+      setMenyimpan(false);
+    }
+  };
+
+  // Kosongkan form untuk pesanan berikutnya
+  const pesananBaru = () => {
+    setForm(formKosong);
+    setBonus([]);
+    setBonusInput("");
+    setTersimpan(null);
+    setMsg("");
   };
 
   const simpan = () => {
@@ -427,12 +320,8 @@ export default function PesananBaruPage() {
 
   return (
     <AppShell active="Pesanan">
-      <style>{cssCetak}</style>
-
       {/* Versi cetak (hanya muncul saat Ctrl+P / tombol Cetak) */}
-      <AreaCetak>
-        <Ringkasan data={data} cetak />
-      </AreaCetak>
+      <AreaCetak data={data} />
 
       <div className="px-6 py-5">
         <p className="text-xs text-neutral-500">
@@ -444,7 +333,8 @@ export default function PesananBaruPage() {
           <div>
             <h1 className="text-2xl font-medium">Pesanan Baru</h1>
             <p className="mt-1 text-sm text-neutral-400">
-              Isi data acara, lalu kirim konfirmasi ke pelanggan.
+              Isi data acara, simpan pesanan, lalu kirim konfirmasi ke
+              pelanggan.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -462,11 +352,20 @@ export default function PesananBaruPage() {
             <button onClick={() => window.print()} className={btn}>
               <Printer className="size-4" /> Cetak
             </button>
+            <button onClick={kirim} className={btn}>
+              <Send className="size-4" /> Kirim WA
+            </button>
             <button
-              onClick={kirim}
-              className="flex items-center gap-2 rounded-lg bg-white px-4 py-2 text-sm font-medium text-black hover:bg-neutral-200"
+              onClick={simpanPesanan}
+              disabled={menyimpan}
+              className="flex items-center gap-2 rounded-lg bg-white px-4 py-2 text-sm font-medium text-black hover:bg-neutral-200 disabled:opacity-60"
             >
-              <Send className="size-4" /> Kirim Pesanan
+              <Check className="size-4" />
+              {menyimpan
+                ? "Menyimpan..."
+                : tersimpan
+                  ? "Perbarui Pesanan"
+                  : "Simpan Pesanan"}
             </button>
           </div>
         </div>
@@ -475,6 +374,17 @@ export default function PesananBaruPage() {
           <button onClick={muat} className="underline hover:text-neutral-300">
             Muat draft
           </button>
+          {tersimpan && (
+            <>
+              {" · "}
+              <button
+                onClick={pesananBaru}
+                className="underline hover:text-neutral-300"
+              >
+                Buat pesanan baru
+              </button>
+            </>
+          )}
         </p>
 
         <div
@@ -489,12 +399,7 @@ export default function PesananBaruPage() {
               </p>
               <div className="mt-4 grid gap-4 sm:grid-cols-2">
                 <Field label="Tanggal">
-                  <input
-                    type="date"
-                    className={inp}
-                    value={form.tanggal}
-                    onChange={(e) => set("tanggal", e.target.value)}
-                  />
+                  <input type="date" className={inp} {...f("tanggal")} />
                 </Field>
                 <Field label="Hari">
                   <input
@@ -505,35 +410,25 @@ export default function PesananBaruPage() {
                   />
                 </Field>
                 <Field label="Nama">
-                  <input
-                    className={inp}
-                    value={form.nama}
-                    onChange={(e) => set("nama", e.target.value)}
-                  />
+                  <input className={inp} {...f("nama")} />
                 </Field>
                 <Field label="No HP">
                   <input
                     type="tel"
                     className={inp}
                     placeholder="08123456789"
-                    value={form.hp}
-                    onChange={(e) => set("hp", e.target.value)}
+                    {...f("hp")}
                   />
                 </Field>
                 <Field label="Lokasi" className="sm:col-span-2">
-                  <input
-                    className={inp}
-                    value={form.lokasi}
-                    onChange={(e) => set("lokasi", e.target.value)}
-                  />
+                  <input className={inp} {...f("lokasi")} />
                 </Field>
                 <Field label="GPS" className="sm:col-span-2">
                   <div className="relative">
                     <input
                       className={`${inp} pr-11`}
                       placeholder="Tempel link Google Maps, atau tekan ikon pin"
-                      value={form.gps}
-                      onChange={(e) => set("gps", e.target.value)}
+                      {...f("gps")}
                     />
                     <button
                       type="button"
@@ -549,8 +444,7 @@ export default function PesananBaruPage() {
                   <input
                     className={inp}
                     placeholder="Cth. 10.00 WIB"
-                    value={form.jam}
-                    onChange={(e) => set("jam", e.target.value)}
+                    {...f("jam")}
                   />
                 </Field>
               </div>
@@ -563,17 +457,40 @@ export default function PesananBaruPage() {
               </p>
               <div className="mt-4 grid gap-4 sm:grid-cols-2">
                 <Field label="Paket" className="sm:col-span-2">
-                  <select
-                    className={inp}
-                    value={form.paket}
-                    onChange={(e) => set("paket", e.target.value)}
-                  >
-                    <option value="">Pilih paket</option>
-                    {paketList.map((p) => (
-                      <option key={p}>{p}</option>
+                  <select className={inp} {...f("paket")}>
+                    <option value="">
+                      {sumberPaket === "memuat"
+                        ? "Memuat paket..."
+                        : "Pilih paket"}
+                    </option>
+                    {daftarPaket.map((m) => (
+                      <option key={m.nama} value={m.nama}>
+                        {m.nama} — {rupiah(m.harga)}
+                      </option>
                     ))}
                   </select>
                 </Field>
+                {sumberPaket === "lokal" && (
+                  <p className="text-xs text-amber-400 sm:col-span-2">
+                    API belum tersambung: paket dari data/menu.ts, pesanan belum
+                    bisa disimpan ke server.
+                  </p>
+                )}
+                {paketMenu && (
+                  <div className="rounded-lg border border-white/10 bg-[#1c1c1c] p-3 sm:col-span-2">
+                    <p className="text-xs text-neutral-400">
+                      Isi {paketMenu.nama} · {rupiah(paketMenu.harga)} / porsi
+                    </p>
+                    <ul className="mt-2 grid gap-x-4 gap-y-1 text-sm text-neutral-200 sm:grid-cols-2">
+                      {paketMenu.isi.map((x, i) => (
+                        <li key={`${x}-${i}`} className="flex gap-2">
+                          <span className="text-orange-400">•</span>
+                          {x}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
                 <div className="flex flex-col gap-1.5">
                   <span className="text-xs text-neutral-400">Pilihan Sup</span>
                   <div className="grid grid-cols-2 gap-2">
@@ -594,11 +511,7 @@ export default function PesananBaruPage() {
                   </div>
                 </div>
                 <Field label="Pilihan Es">
-                  <select
-                    className={inp}
-                    value={form.es}
-                    onChange={(e) => set("es", e.target.value)}
-                  >
+                  <select className={inp} {...f("es")}>
                     <option value="">Pilih es</option>
                     {esList.map((e) => (
                       <option key={e}>{e}</option>
@@ -606,11 +519,7 @@ export default function PesananBaruPage() {
                   </select>
                 </Field>
                 <Field label="Data Tambahan" className="sm:col-span-2">
-                  <input
-                    className={inp}
-                    value={form.dataTambahan}
-                    onChange={(e) => set("dataTambahan", e.target.value)}
-                  />
+                  <input className={inp} {...f("dataTambahan")} />
                 </Field>
               </div>
             </section>
@@ -626,33 +535,21 @@ export default function PesananBaruPage() {
                     type="number"
                     min={0}
                     className={inp}
-                    value={form.jumlah}
-                    onChange={(e) => set("jumlah", e.target.value)}
+                    {...f("jumlah")}
                   />
                 </Field>
                 <Field label="Jumlah Meja">
-                  <input
-                    type="number"
-                    min={0}
-                    className={inp}
-                    value={form.meja}
-                    onChange={(e) => set("meja", e.target.value)}
-                  />
+                  <input type="number" min={0} className={inp} {...f("meja")} />
                 </Field>
                 <Field label="Warna Taplak">
-                  <input
-                    className={inp}
-                    value={form.taplak}
-                    onChange={(e) => set("taplak", e.target.value)}
-                  />
+                  <input className={inp} {...f("taplak")} />
                 </Field>
                 <Field label="Waiters">
                   <input
                     type="number"
                     min={0}
                     className={inp}
-                    value={form.waiters}
-                    onChange={(e) => set("waiters", e.target.value)}
+                    {...f("waiters")}
                   />
                 </Field>
 
@@ -703,12 +600,7 @@ export default function PesananBaruPage() {
                 </div>
 
                 <Field label="Keterangan Tambahan" className="sm:col-span-2">
-                  <textarea
-                    rows={3}
-                    className={inp}
-                    value={form.keterangan}
-                    onChange={(e) => set("keterangan", e.target.value)}
-                  />
+                  <textarea rows={3} className={inp} {...f("keterangan")} />
                 </Field>
               </div>
             </section>
@@ -722,7 +614,7 @@ export default function PesananBaruPage() {
               </h2>
               <div className="min-h-0 overflow-y-auto bg-neutral-100 p-4 sm:p-6">
                 <div className="rounded-xl bg-white p-6 shadow-sm sm:p-8">
-                  <Ringkasan data={data} />
+                  <RingkasanPesanan data={data} />
                 </div>
               </div>
             </aside>
