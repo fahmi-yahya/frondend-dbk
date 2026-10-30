@@ -1,301 +1,168 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import AppShell from "@/components/AppShell";
 import {
   Bell,
+  Check,
   ChefHat,
-  Cone,
-  Cookie,
-  Package,
+  Pencil,
   Search,
+  Trash2,
   Utensils,
-  type LucideIcon,
+  X,
 } from "lucide-react";
+import { api } from "@/lib/api";
+import {
+  ambilPaketLengkap,
+  pesanError,
+  rp,
+  type MenuItem,
+  type PaketLengkap,
+} from "@/lib/paket";
 
 /* ------------------------------------------------------------------ */
-/* Data contoh                                                         */
+/* Data dari API Laravel: GET /paket (paket + menunya).                */
+/* Edit: PUT /paket/{id}, PUT /menu/{id}. Hapus: DELETE ...            */
 /*                                                                     */
-/* Harga paket diturunkan dari total pesanan di data contoh Jadwal     */
-/* Acara (mis. Nasi Box ×100 = Rp 2.500.000, Prasmanan ×150 =          */
-/* Rp 11.250.000), supaya angkanya konsisten. Minimum order dan isi    */
-/* menu hanya contoh. Ganti dengan sumber data asli kalau sudah ada.   */
-/*                                                                     */
-/* Satu menu bisa dipakai di beberapa paket (field `paket`). Tab Paket */
-/* menyusun isinya dari daftar menu, jadi menandai menu "Habis" juga   */
-/* tampil di kartu paket yang memakainya.                              */
+/* Tanda "Habis" belum punya kolom di database, jadi hanya berlaku     */
+/* selama halaman terbuka (hilang saat di-refresh).                    */
 /* ------------------------------------------------------------------ */
-
-const KATEGORI = ["Nasi", "Lauk", "Sayur", "Sup", "Es", "Snack"] as const;
-type Kategori = (typeof KATEGORI)[number];
-
-type Menu = { id: string; nama: string; kategori: Kategori; paket: string[] };
-
-const menu: Menu[] = [
-  {
-    id: "nasi-putih",
-    nama: "Nasi Putih",
-    kategori: "Nasi",
-    paket: ["nasi-box", "prasmanan"],
-  },
-  {
-    id: "nasi-kuning",
-    nama: "Nasi Kuning",
-    kategori: "Nasi",
-    paket: ["tumpeng", "tumpeng-mini"],
-  },
-
-  {
-    id: "ayam-goreng",
-    nama: "Ayam Goreng",
-    kategori: "Lauk",
-    paket: ["nasi-box", "prasmanan", "tumpeng"],
-  },
-  {
-    id: "ayam-bakar",
-    nama: "Ayam Bakar",
-    kategori: "Lauk",
-    paket: ["nasi-box", "prasmanan"],
-  },
-  {
-    id: "rendang",
-    nama: "Rendang Sapi",
-    kategori: "Lauk",
-    paket: ["prasmanan"],
-  },
-  {
-    id: "ikan-goreng",
-    nama: "Ikan Goreng",
-    kategori: "Lauk",
-    paket: ["prasmanan", "tumpeng"],
-  },
-  {
-    id: "telur-balado",
-    nama: "Telur Balado",
-    kategori: "Lauk",
-    paket: ["nasi-box", "tumpeng-mini"],
-  },
-  {
-    id: "tempe-orek",
-    nama: "Tempe Orek",
-    kategori: "Lauk",
-    paket: ["nasi-box", "tumpeng", "tumpeng-mini"],
-  },
-  {
-    id: "perkedel",
-    nama: "Perkedel Kentang",
-    kategori: "Lauk",
-    paket: ["tumpeng", "tumpeng-mini"],
-  },
-
-  {
-    id: "sambal-goreng",
-    nama: "Sambal Goreng Kentang",
-    kategori: "Sayur",
-    paket: ["nasi-box", "prasmanan"],
-  },
-  { id: "capcay", nama: "Capcay", kategori: "Sayur", paket: ["prasmanan"] },
-  {
-    id: "urap",
-    nama: "Urap Sayur",
-    kategori: "Sayur",
-    paket: ["tumpeng", "tumpeng-mini"],
-  },
-
-  { id: "bakso", nama: "Bakso", kategori: "Sup", paket: ["prasmanan"] },
-  { id: "kimlo", nama: "Kimlo", kategori: "Sup", paket: ["prasmanan"] },
-  { id: "soto-ayam", nama: "Soto Ayam", kategori: "Sup", paket: ["prasmanan"] },
-
-  { id: "es-buah", nama: "Es Buah", kategori: "Es", paket: ["prasmanan"] },
-  { id: "es-campur", nama: "Es Campur", kategori: "Es", paket: ["prasmanan"] },
-
-  { id: "risoles", nama: "Risoles", kategori: "Snack", paket: ["snack-box"] },
-  { id: "lemper", nama: "Lemper", kategori: "Snack", paket: ["snack-box"] },
-  {
-    id: "kue-lapis",
-    nama: "Kue Lapis",
-    kategori: "Snack",
-    paket: ["snack-box"],
-  },
-  { id: "pastel", nama: "Pastel", kategori: "Snack", paket: ["snack-box"] },
-  {
-    id: "dadar-gulung",
-    nama: "Dadar Gulung",
-    kategori: "Snack",
-    paket: ["snack-box"],
-  },
-  {
-    id: "arem-arem",
-    nama: "Arem-arem",
-    kategori: "Snack",
-    paket: ["snack-box"],
-  },
-];
-
-type Paket = {
-  id: string;
-  nama: string;
-  ikon: LucideIcon;
-  satuan: string;
-  harga: number;
-  /** Harga turun mulai jumlah tertentu */
-  hargaGrosir?: { mulai: number; harga: number };
-  minOrder: number;
-  deskripsi: string;
-  /** Kategori yang dipilih pelanggan, dan berapa pilihannya */
-  pilih?: Partial<Record<Kategori, number>>;
-  bonus?: string[];
-};
-
-const paket: Paket[] = [
-  {
-    id: "nasi-box",
-    nama: "Nasi Box",
-    ikon: Package,
-    satuan: "box",
-    harga: 25000,
-    minOrder: 30,
-    deskripsi:
-      "Nasi lengkap dalam kotak. Cocok untuk rapat, pelatihan, dan acara kantor atau sekolah.",
-  },
-  {
-    id: "snack-box",
-    nama: "Snack Box",
-    ikon: Cookie,
-    satuan: "box",
-    harga: 25000,
-    minOrder: 40,
-    deskripsi:
-      "Aneka kue basah dalam kotak untuk rapat, arisan, dan pengajian.",
-    pilih: { Snack: 3 },
-  },
-  {
-    id: "tumpeng",
-    nama: "Tumpeng",
-    ikon: Cone,
-    satuan: "tumpeng",
-    harga: 450000,
-    minOrder: 1,
-    deskripsi:
-      "Tumpeng nasi kuning dengan lauk lengkap untuk syukuran dan peringatan.",
-  },
-  {
-    id: "tumpeng-mini",
-    nama: "Tumpeng Mini",
-    ikon: Cone,
-    satuan: "tumpeng",
-    harga: 425000,
-    minOrder: 1,
-    deskripsi: "Ukuran lebih kecil untuk syukuran keluarga.",
-  },
-  {
-    id: "prasmanan",
-    nama: "Prasmanan",
-    ikon: Utensils,
-    satuan: "porsi",
-    harga: 95000,
-    hargaGrosir: { mulai: 150, harga: 75000 },
-    minOrder: 30,
-    deskripsi:
-      "Hidangan prasmanan lengkap untuk hajatan dan resepsi. Jumlah meja, warna taplak, dan pramusaji diatur saat membuat pesanan.",
-    pilih: { Sup: 1, Es: 1 },
-    bonus: ["Dekorasi meja", "Air mineral", "Dekorasi pelaminan"],
-  },
-];
 
 const card = "rounded-2xl border border-white/10 bg-[#141414]";
 const label = "font-mono text-xs text-neutral-400";
 const chip = "rounded-md bg-white/[0.06] px-2 py-1 text-xs";
+const inp =
+  "w-full rounded-lg border border-white/10 bg-[#1c1c1c] px-3 py-2 text-sm [color-scheme:dark] placeholder:text-neutral-600 focus:border-orange-500/60 focus:outline-none";
+const aksi =
+  "grid size-8 place-items-center rounded-lg text-neutral-500 transition-colors hover:bg-white/10 hover:text-neutral-200";
 
-const rupiah = (n: number) =>
-  `Rp ${String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ".")}`;
-const namaPaket = (id: string) => paket.find((p) => p.id === id)?.nama ?? id;
-const menuDalam = (idPaket: string) =>
-  menu.filter((m) => m.paket.includes(idPaket));
+type Pesan = { ok: boolean; teks: string };
+type BarisMenu = MenuItem & { idPaket: number; namaPaket: string };
 
 /* ------------------------------------------------------------------ */
 /* Komponen kecil                                                      */
 /* ------------------------------------------------------------------ */
 
-function KartuPaket({ p, habis }: { p: Paket; habis: Set<string> }) {
-  const Ikon = p.ikon;
-  const isi = menuDalam(p.id);
-  const kelompok = KATEGORI.map((k) => ({
-    k,
-    items: isi.filter((m) => m.kategori === k),
-  })).filter((g) => g.items.length > 0);
-  const jumlahHabis = isi.filter((m) => habis.has(m.id)).length;
+function KartuPaket({
+  p,
+  habis,
+  onSimpan,
+  onHapus,
+}: {
+  p: PaketLengkap;
+  habis: Set<number>;
+  onSimpan: (p: PaketLengkap, nama: string, harga: number) => Promise<boolean>;
+  onHapus: (p: PaketLengkap) => void;
+}) {
+  const [edit, setEdit] = useState(false);
+  const [nama, setNama] = useState(p.nama);
+  const [harga, setHarga] = useState(String(p.harga));
+  const jumlahHabis = p.menu.filter((m) => habis.has(m.id)).length;
+
+  const simpan = async () => {
+    if (!nama.trim() || !(Number(harga) > 0)) return;
+    if (await onSimpan(p, nama.trim(), Number(harga))) setEdit(false);
+  };
 
   return (
     <article className={`${card} flex flex-col gap-4 p-5`}>
-      <header className="flex items-start justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-white/5 text-orange-500">
-            <Ikon className="size-5" />
-          </span>
-          <div>
-            <h3 className="text-lg font-medium leading-tight">{p.nama}</h3>
-            <p className={label}>
-              Min. {p.minOrder} {p.satuan}
-            </p>
+      {edit ? (
+        <div className="grid gap-2">
+          <input
+            className={inp}
+            value={nama}
+            onChange={(e) => setNama(e.target.value)}
+            aria-label="Nama paket"
+          />
+          <input
+            type="number"
+            min={0}
+            className={inp}
+            value={harga}
+            onChange={(e) => setHarga(e.target.value)}
+            aria-label="Harga per porsi"
+          />
+          <div className="flex gap-2">
+            <button
+              onClick={simpan}
+              className="flex items-center gap-1.5 rounded-lg bg-white px-3 py-1.5 text-sm font-medium text-black hover:bg-neutral-200"
+            >
+              <Check className="size-4" /> Simpan
+            </button>
+            <button
+              onClick={() => {
+                setEdit(false);
+                setNama(p.nama);
+                setHarga(String(p.harga));
+              }}
+              className="rounded-lg border border-white/10 px-3 py-1.5 text-sm text-neutral-300 hover:bg-white/10"
+            >
+              Batal
+            </button>
           </div>
         </div>
-        <div className="text-right">
-          <p className="text-lg font-medium leading-tight">{rupiah(p.harga)}</p>
-          <p className={label}>per {p.satuan}</p>
-        </div>
-      </header>
-
-      <p className="text-sm text-neutral-400">{p.deskripsi}</p>
-
-      {p.hargaGrosir && (
-        <p className="rounded-lg bg-orange-500/10 px-3 py-2 text-xs text-orange-300">
-          Mulai {p.hargaGrosir.mulai} {p.satuan}: {rupiah(p.hargaGrosir.harga)}{" "}
-          per {p.satuan}
-        </p>
+      ) : (
+        <header className="flex items-start justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-white/5 text-orange-500">
+              <Utensils className="size-5" />
+            </span>
+            <div>
+              <h3 className="text-lg font-medium leading-tight">{p.nama}</h3>
+              <p className={label}>{p.menu.length} menu</p>
+            </div>
+          </div>
+          <div className="flex items-start gap-1">
+            <div className="mr-1 text-right">
+              <p className="text-lg font-medium leading-tight">{rp(p.harga)}</p>
+              <p className={label}>per porsi</p>
+            </div>
+            <button
+              onClick={() => setEdit(true)}
+              className={aksi}
+              aria-label={`Ubah ${p.nama}`}
+            >
+              <Pencil className="size-4" />
+            </button>
+            <button
+              onClick={() => onHapus(p)}
+              className={`${aksi} hover:text-red-400`}
+              aria-label={`Hapus ${p.nama}`}
+            >
+              <Trash2 className="size-4" />
+            </button>
+          </div>
+        </header>
       )}
 
-      <dl className="flex flex-col gap-3">
-        {kelompok.map(({ k, items }) => (
-          <div key={k}>
-            <dt className={`${label} mb-1.5`}>
-              {k}
-              {p.pilih?.[k]
-                ? ` · pilih ${p.pilih[k]} dari ${items.length}`
-                : ""}
-            </dt>
-            <dd className="flex flex-wrap gap-1.5">
-              {items.map((m) => {
-                const h = habis.has(m.id);
-                return (
-                  <span
-                    key={m.id}
-                    className={`${chip} ${
-                      h ? "text-neutral-500 line-through" : "text-neutral-200"
-                    }`}
-                  >
-                    {m.nama}
-                    {h && <span className="sr-only"> (habis)</span>}
-                  </span>
-                );
-              })}
-            </dd>
-          </div>
-        ))}
-        {p.bonus && (
-          <div>
-            <dt className={`${label} mb-1.5`}>Bonus pilihan</dt>
-            <dd className="flex flex-wrap gap-1.5">
-              {p.bonus.map((b) => (
-                <span key={b} className={`${chip} text-neutral-200`}>
-                  {b}
-                </span>
-              ))}
-            </dd>
-          </div>
-        )}
-      </dl>
+      {p.menu.length > 0 ? (
+        <div className="flex flex-wrap gap-1.5">
+          {p.menu.map((m, i) => {
+            const h = habis.has(m.id);
+            return (
+              <span
+                key={`${m.id}-${i}`}
+                className={`${chip} ${h ? "text-neutral-500 line-through" : "text-neutral-200"}`}
+              >
+                {m.nama}
+                {h && <span className="sr-only"> (habis)</span>}
+              </span>
+            );
+          })}
+        </div>
+      ) : (
+        <p className="text-sm text-neutral-500">
+          Belum ada menu.{" "}
+          <Link
+            href="/dashboard/menu/tambah-menu"
+            className="underline hover:text-neutral-300"
+          >
+            Tambah menu
+          </Link>
+        </p>
+      )}
 
       {jumlahHabis > 0 && (
         <p className="mt-auto text-xs text-red-400">
@@ -335,6 +202,101 @@ function Saklar({
   );
 }
 
+function Baris({
+  m,
+  habis,
+  onToggle,
+  onSimpan,
+  onHapus,
+}: {
+  m: BarisMenu;
+  habis: boolean;
+  onToggle: () => void;
+  onSimpan: (m: BarisMenu, nama: string) => Promise<boolean>;
+  onHapus: (m: BarisMenu) => void;
+}) {
+  const [edit, setEdit] = useState(false);
+  const [nama, setNama] = useState(m.nama);
+
+  const simpan = async () => {
+    if (!nama.trim()) return;
+    if (await onSimpan(m, nama.trim())) setEdit(false);
+  };
+
+  return (
+    <li className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3">
+      <div className="min-w-0 flex-1 basis-40">
+        {edit ? (
+          <input
+            className={inp}
+            value={nama}
+            autoFocus
+            onChange={(e) => setNama(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") simpan();
+              if (e.key === "Escape") setEdit(false);
+            }}
+            aria-label="Nama menu"
+          />
+        ) : (
+          <>
+            <p
+              className={`truncate text-sm ${habis ? "text-neutral-500 line-through" : "text-neutral-100"}`}
+            >
+              {m.nama}
+            </p>
+            <p className={label}>{m.namaPaket}</p>
+          </>
+        )}
+      </div>
+      {!edit && (
+        <span
+          className={`w-14 text-right font-mono text-xs ${habis ? "text-red-400" : "text-neutral-400"}`}
+        >
+          {habis ? "Habis" : "Tersedia"}
+        </span>
+      )}
+      {!edit && <Saklar aktif={!habis} nama={m.nama} onToggle={onToggle} />}
+      <div className="flex gap-1">
+        {edit ? (
+          <>
+            <button onClick={simpan} className={aksi} aria-label="Simpan">
+              <Check className="size-4" />
+            </button>
+            <button
+              onClick={() => {
+                setEdit(false);
+                setNama(m.nama);
+              }}
+              className={aksi}
+              aria-label="Batal"
+            >
+              <X className="size-4" />
+            </button>
+          </>
+        ) : (
+          <>
+            <button
+              onClick={() => setEdit(true)}
+              className={aksi}
+              aria-label={`Ubah ${m.nama}`}
+            >
+              <Pencil className="size-4" />
+            </button>
+            <button
+              onClick={() => onHapus(m)}
+              className={`${aksi} hover:text-red-400`}
+              aria-label={`Hapus ${m.nama}`}
+            >
+              <Trash2 className="size-4" />
+            </button>
+          </>
+        )}
+      </div>
+    </li>
+  );
+}
+
 /* ------------------------------------------------------------------ */
 /* Halaman                                                             */
 /* ------------------------------------------------------------------ */
@@ -342,45 +304,109 @@ function Saklar({
 type Tab = "paket" | "menu";
 
 export default function MenuPaketPage() {
+  const [pakets, setPakets] = useState<PaketLengkap[]>([]);
+  const [status, setStatus] = useState<"memuat" | "ok" | "gagal">("memuat");
   const [tab, setTab] = useState<Tab>("paket");
   const [cari, setCari] = useState("");
-  const [kategori, setKategori] = useState<"Semua" | Kategori>("Semua");
-  const [habis, setHabis] = useState<Set<string>>(() => new Set());
+  const [filter, setFilter] = useState("Semua"); // id paket, atau "Semua"
+  const [habis, setHabis] = useState<Set<number>>(() => new Set());
+  const [pesan, setPesan] = useState<Pesan | null>(null);
+
+  useEffect(() => {
+    ambilPaketLengkap()
+      .then((list) => {
+        setPakets(list);
+        setStatus("ok");
+      })
+      .catch(() => setStatus("gagal"));
+  }, []);
+
+  const segarkan = () => ambilPaketLengkap().then(setPakets);
+
+  const semuaMenu: BarisMenu[] = pakets.flatMap((p) =>
+    p.menu.map((m) => ({ ...m, idPaket: p.id, namaPaket: p.nama })),
+  );
 
   const q = cari.trim().toLowerCase();
   const cocok = (...teks: string[]) =>
     !q || teks.some((t) => t.toLowerCase().includes(q));
 
-  const paketTampil = paket.filter((p) =>
-    cocok(p.nama, p.deskripsi, ...menuDalam(p.id).map((m) => m.nama)),
+  const paketTampil = pakets.filter((p) =>
+    cocok(p.nama, ...p.menu.map((m) => m.nama)),
   );
-  const menuTampil = menu.filter(
+  const menuTampil = semuaMenu.filter(
     (m) =>
-      (kategori === "Semua" || m.kategori === kategori) &&
-      cocok(m.nama, m.kategori, ...m.paket.map(namaPaket)),
+      (filter === "Semua" || String(m.idPaket) === filter) &&
+      cocok(m.nama, m.namaPaket),
   );
-  const jumlahHabis = menu.filter((m) => habis.has(m.id)).length;
+  const jumlahHabis = semuaMenu.filter((m) => habis.has(m.id)).length;
 
-  const toggleHabis = (id: string) =>
+  const toggleHabis = (id: number) =>
     setHabis((prev) => {
       const next = new Set(prev);
       if (!next.delete(id)) next.add(id);
       return next;
     });
 
+  // Jalankan aksi ke server, lalu muat ulang daftar
+  const jalankan = async (aksiApi: () => Promise<unknown>, sukses: string) => {
+    try {
+      await aksiApi();
+      await segarkan();
+      setPesan({ ok: true, teks: sukses });
+      return true;
+    } catch (err) {
+      setPesan({ ok: false, teks: pesanError(err) });
+      return false;
+    }
+  };
+
+  const simpanPaket = (p: PaketLengkap, nama: string, harga: number) =>
+    jalankan(
+      () => api.put(`/paket/${p.id}`, { nama_paket: nama, harga_paket: harga }),
+      `Paket "${nama}" diperbarui.`,
+    );
+  const hapusPaket = (p: PaketLengkap) => {
+    if (!confirm(`Hapus paket "${p.nama}" beserta ${p.menu.length} menunya?`))
+      return;
+    jalankan(() => api.delete(`/paket/${p.id}`), `Paket "${p.nama}" dihapus.`);
+  };
+  const simpanMenu = (m: BarisMenu, nama: string) =>
+    jalankan(
+      () => api.put(`/menu/${m.id}`, { id_paket: m.idPaket, nama_menu: nama }),
+      `Menu "${nama}" diperbarui.`,
+    );
+  const hapusMenu = (m: BarisMenu) => {
+    if (!confirm(`Hapus menu "${m.nama}" dari ${m.namaPaket}?`)) return;
+    jalankan(() => api.delete(`/menu/${m.id}`), `Menu "${m.nama}" dihapus.`);
+  };
+
   return (
     <AppShell active="menu">
-      <header className="flex items-center justify-between px-6 py-5">
+      <header className="flex flex-wrap items-center justify-between gap-3 px-6 py-5">
         <div className="flex items-center gap-4">
           <span className="flex items-center gap-2 text-sm">
             <ChefHat className="size-4 text-neutral-400" /> Menu & Paket
           </span>
-          <span className={label}>
-            {paket.length} Paket, {menu.length} Menu
-          </span>
+          {status === "ok" && (
+            <span className={label}>
+              {pakets.length} Paket, {semuaMenu.length} Menu
+            </span>
+          )}
         </div>
         <div className="flex items-center gap-3">
-         
+          <Link
+            href="/dashboard/menu/tambah-menu"
+            className="rounded-lg border border-white/10 px-3 py-2 text-sm text-neutral-200 hover:bg-white/10"
+          >
+            + Tambah Menu
+          </Link>
+          <Link
+            href="/dashboard/menu/tambah-paket"
+            className="rounded-lg bg-white px-3 py-2 text-sm font-medium text-black hover:bg-neutral-200"
+          >
+            + Tambah Paket
+          </Link>
           <button
             aria-label="Notifikasi"
             className="grid size-9 place-items-center rounded-lg border border-white/10 text-neutral-400 hover:text-white"
@@ -397,17 +423,36 @@ export default function MenuPaketPage() {
         <div>
           <h1 className="text-3xl font-medium">Menu & Paket</h1>
           <p className="mt-1 text-sm text-neutral-400">
-            Daftar paket katering dan menu di dalamnya. Tandai menu yang sedang
-            habis supaya terlihat di paket yang memakainya.
+            Daftar paket katering dan menu di dalamnya. Ubah atau hapus lewat
+            ikon di tiap baris.
           </p>
         </div>
+
+        {status === "gagal" && (
+          <p className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-400">
+            Tidak bisa terhubung ke server. Pastikan Laravel berjalan dan
+            NEXT_PUBLIC_API_URL sudah benar.
+          </p>
+        )}
+        {pesan && (
+          <p
+            role="status"
+            className={`rounded-lg border px-4 py-3 text-sm ${
+              pesan.ok
+                ? "border-green-500/30 bg-green-500/10 text-green-400"
+                : "border-amber-500/30 bg-amber-500/10 text-amber-400"
+            }`}
+          >
+            {pesan.teks}
+          </p>
+        )}
 
         <div className="flex flex-wrap items-end justify-between gap-3 border-b border-white/10">
           <div role="tablist" className="flex gap-4 text-sm">
             {(
               [
-                ["paket", `Paket (${paket.length})`],
-                ["menu", `Menu (${menu.length})`],
+                ["paket", `Paket (${pakets.length})`],
+                ["menu", `Menu (${semuaMenu.length})`],
               ] as const
             ).map(([t, nama]) => (
               <button
@@ -441,91 +486,76 @@ export default function MenuPaketPage() {
           </label>
         </div>
 
-        {tab === "paket" ? (
+        {status === "memuat" && (
+          <p className="py-12 text-center text-sm text-neutral-500">
+            Memuat data...
+          </p>
+        )}
+
+        {status === "ok" && tab === "paket" && (
           <div role="tabpanel">
             {paketTampil.length > 0 ? (
               <div className="grid gap-4 lg:grid-cols-2 2xl:grid-cols-3">
                 {paketTampil.map((p) => (
-                  <KartuPaket key={p.id} p={p} habis={habis} />
+                  <KartuPaket
+                    key={p.id}
+                    p={p}
+                    habis={habis}
+                    onSimpan={simpanPaket}
+                    onHapus={hapusPaket}
+                  />
                 ))}
               </div>
             ) : (
               <p className="py-12 text-center text-sm text-neutral-500">
-                Tidak ada paket yang cocok dengan “{cari}”.
+                {cari
+                  ? `Tidak ada paket yang cocok dengan “${cari}”.`
+                  : "Belum ada paket. Klik + Tambah Paket."}
               </p>
             )}
           </div>
-        ) : (
+        )}
+
+        {status === "ok" && tab === "menu" && (
           <div role="tabpanel" className="space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex flex-wrap gap-1">
-                {(["Semua", ...KATEGORI] as const).map((k) => (
+                {[
+                  { id: "Semua", nama: "Semua" },
+                  ...pakets.map((p) => ({ id: String(p.id), nama: p.nama })),
+                ].map((k) => (
                   <button
-                    key={k}
-                    aria-pressed={kategori === k}
-                    onClick={() => setKategori(k)}
+                    key={k.id}
+                    aria-pressed={filter === k.id}
+                    onClick={() => setFilter(k.id)}
                     className={`rounded-lg px-3 py-1.5 text-sm transition-colors ${
-                      kategori === k
+                      filter === k.id
                         ? "bg-white/10 text-white"
                         : "text-neutral-400 hover:bg-white/5 hover:text-neutral-200"
                     }`}
                   >
-                    {k}
+                    {k.nama}
                   </button>
                 ))}
               </div>
               <span className={label}>
-                {menu.length - jumlahHabis} tersedia, {jumlahHabis} habis
+                {semuaMenu.length - jumlahHabis} tersedia, {jumlahHabis} habis
               </span>
             </div>
 
             <section className={`${card} overflow-hidden`}>
               {menuTampil.length > 0 ? (
                 <ul className="divide-y divide-white/10">
-                  {menuTampil.map((m) => {
-                    const h = habis.has(m.id);
-                    return (
-                      <li
-                        key={m.id}
-                        className="flex items-center gap-4 px-4 py-3"
-                      >
-                        <div className="min-w-0 flex-1">
-                          <p
-                            className={`truncate text-sm ${
-                              h
-                                ? "text-neutral-500 line-through"
-                                : "text-neutral-100"
-                            }`}
-                          >
-                            {m.nama}
-                          </p>
-                          <p className={label}>{m.kategori}</p>
-                        </div>
-                        <div className="hidden flex-wrap justify-end gap-1.5 sm:flex">
-                          {m.paket.map((id) => (
-                            <span
-                              key={id}
-                              className="rounded-md bg-white/[0.06] px-2 py-0.5 text-[11px] text-neutral-300"
-                            >
-                              {namaPaket(id)}
-                            </span>
-                          ))}
-                        </div>
-                        <span
-                          className={`w-14 text-right font-mono text-xs ${
-                            h ? "text-red-400" : "text-neutral-400"
-                          }`}
-                        >
-                          {h ? "Habis" : "Tersedia"}
-                        </span>
-                        <Saklar
-                          aktif={!h}
-                          nama={m.nama}
-                          onToggle={() => toggleHabis(m.id)}
-                        />
-                      </li>
-                    );
-                  })}
+                  {menuTampil.map((m, i) => (
+                    <Baris
+                      key={`${m.id}-${i}`}
+                      m={m}
+                      habis={habis.has(m.id)}
+                      onToggle={() => toggleHabis(m.id)}
+                      onSimpan={simpanMenu}
+                      onHapus={hapusMenu}
+                    />
+                  ))}
                 </ul>
               ) : (
                 <p className="py-12 text-center text-sm text-neutral-500">

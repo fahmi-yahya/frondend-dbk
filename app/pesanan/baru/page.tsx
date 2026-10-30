@@ -57,6 +57,20 @@ const angka = (v: string | number) =>
     10,
   ) || 0;
 
+// Isi paket dari respons API. Laravel memberi nama relasi apa adanya
+// (menu / menus / ...), jadi beberapa nama dicoba.
+const ambilIsi = (p: Record<string, unknown>): string[] => {
+  const sumber = p.menu ?? p.menus ?? p.daftar_menu ?? p.isi ?? [];
+  if (!Array.isArray(sumber)) return [];
+  return sumber
+    .map((m) =>
+      typeof m === "string"
+        ? m
+        : String((m as Record<string, unknown>)?.nama_menu ?? ""),
+    )
+    .filter(Boolean);
+};
+
 // Ambil pesan error yang enak dibaca dari respons Laravel
 const pesanError = (err: unknown) => {
   if (axios.isAxiosError(err)) {
@@ -118,19 +132,12 @@ export default function PesananBaruPage() {
         const list =
           (Array.isArray(res.data) ? res.data : res.data?.data) ?? [];
         setDaftarPaket(
-          list.map(
-            (p: {
-              id: number;
-              nama_paket: string;
-              harga_paket: string;
-              menu?: { nama_menu: string }[];
-            }) => ({
-              id: p.id,
-              nama: p.nama_paket,
-              harga: angka(p.harga_paket),
-              isi: (p.menu ?? []).map((m) => m.nama_menu),
-            }),
-          ),
+          list.map((p: Record<string, unknown>) => ({
+            id: p.id as number,
+            nama: String(p.nama_paket ?? ""),
+            harga: angka(p.harga_paket as string | number),
+            isi: ambilIsi(p),
+          })),
         );
         setSumberPaket("api");
       })
@@ -481,6 +488,13 @@ export default function PesananBaruPage() {
                     <p className="text-xs text-neutral-400">
                       Isi {paketMenu.nama} · {rupiah(paketMenu.harga)} / porsi
                     </p>
+                    {paketMenu.isi.length === 0 && (
+                      <p className="mt-2 text-xs text-amber-400">
+                        Paket ini belum punya menu di API. Pastikan GET /paket
+                        memuat relasi menu (with(&apos;menu&apos;)) dan paketnya
+                        punya baris di tabel menu.
+                      </p>
+                    )}
                     <ul className="mt-2 grid gap-x-4 gap-y-1 text-sm text-neutral-200 sm:grid-cols-2">
                       {paketMenu.isi.map((x, i) => (
                         <li key={`${x}-${i}`} className="flex gap-2">

@@ -1,16 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { createPortal } from "react-dom";
 import Link from "next/link";
 import AppShell from "@/components/AppShell";
-import {
-  AreaCetak,
-  RingkasanPesanan,
-  tanggalLengkap,
-  tanggalSingkat,
-  type DataRingkasan,
-} from "@/components/RingkasanPesanan";
+import { DetailPesanan, type Order } from "@/components/DetailPesanan";
+import { tanggalSingkat } from "@/components/RingkasanPesanan";
+import { api } from "@/lib/api";
 import {
   LayoutDashboard,
   TrendingUp,
@@ -18,567 +13,107 @@ import {
   TrendingDown,
   ArrowUpRight,
   ArrowDownRight,
-  Printer,
-  X,
   ChevronLeft,
   ChevronRight,
 } from "lucide-react";
 
-const stats = [
-  { label: "Total Pesanan", value: "142", delta: "+8.2%", up: true },
-  {
-    label: "Pendapatan",
-    value: "37 jt",
-    prefix: "Rp",
-    delta: "+12.5%",
-    up: true,
-  },
-  { label: "Pelanggan Baru", value: "32", delta: "-4.3%", up: false },
-  { label: "Pelanggan Repeat", value: "42 %", delta: "+2.1%", up: true },
+/* ------------------------------------------------------------------ */
+/* Tipe & bantuan                                                       */
+/* Data diambil dari API Laravel: GET /dashboard dan GET /pesanan.      */
+/* ------------------------------------------------------------------ */
+
+type Stat = {
+  label: string;
+  value: string;
+  prefix?: string;
+  delta: string;
+  up: boolean;
+};
+type Periode = {
+  label: string;
+  value: number;
+  income: number;
+  dari: string;
+  sampai: string;
+};
+type MenuTerlaris = {
+  name: string;
+  income: string;
+  orders: number;
+  growth: number;
+  portions: string;
+};
+
+const LABEL_STAT = [
+  "Total Pesanan",
+  "Pendapatan",
+  "Pelanggan Baru",
+  "Pelanggan Repeat",
+];
+const LABEL_PERIODE = [
+  "Jan–Feb",
+  "Mar–Apr",
+  "Mei–Jun",
+  "Jul–Agu",
+  "Sep–Okt",
+  "Nov–Des",
 ];
 
-const products = [
-  {
-    name: "Nasi Box Ayam Bakar",
-    income: "Rp 18,2 jt",
-    orders: 96,
-    growth: 32,
-    portions: "1.240",
-    rating: "4.9",
-  },
-  {
-    name: "Tumpeng Mini",
-    income: "Rp 12,6 jt",
-    orders: 58,
-    growth: 26,
-    portions: "410",
-    rating: "4.8",
-  },
-  {
-    name: "Snack Box Premium",
-    income: "Rp 9,4 jt",
-    orders: 74,
-    growth: 13,
-    portions: "890",
-    rating: "4.7",
-  },
-  {
-    name: "Prasmanan Pernikahan",
-    income: "Rp 8,1 jt",
-    orders: 11,
-    growth: -11,
-    portions: "650",
-    rating: "4.6",
-  },
-];
+// Isi awal sebelum data dari server datang
+const statAwal: Stat[] = LABEL_STAT.map((label) => ({
+  label,
+  value: "–",
+  delta: "0%",
+  up: true,
+}));
+const periodeAwal: Periode[] = LABEL_PERIODE.map((label) => ({
+  label,
+  value: 0,
+  income: 0,
+  dari: "",
+  sampai: "",
+}));
 
-// Data tambahan yang muncul di detail pesanan (semuanya boleh dikosongkan;
-// bagian yang kosong otomatis disembunyikan di detail)
-type Extra = {
-  hp?: string;
-  jam?: string;
-  gps?: string;
-  sup?: string;
-  es?: string;
-  dataTambahan?: string;
-  meja?: string;
-  taplak?: string;
-  waiters?: string;
-  bonus?: string[];
-  keterangan?: string;
-};
+const juta = (n: number) =>
+  `${(n / 1e6).toLocaleString("id-ID", { maximumFractionDigits: 1 })} jt`;
+const rpJt = (n: number) =>
+  n >= 1e6 ? `Rp ${juta(n)}` : `Rp ${n.toLocaleString("id-ID")}`;
 
-type Order = {
-  id: string;
-  customer: string;
-  item: string; // contoh: "Nasi Box ×80" (nama paket ×jumlah)
-  tanggal: string; // format "2026-03-19"
-  lokasi: string;
-  amount: number;
-  status: "Lunas" | "DP" | "Batal";
-  extra: Extra;
-};
-const o = (
-  id: string,
-  customer: string,
-  item: string,
-  tanggal: string,
-  amount: number,
-  status: Order["status"],
-  lokasi: string,
-  extra: Extra = {},
-): Order => ({
-  id,
-  customer,
-  item,
-  tanggal,
-  lokasi,
-  amount,
-  status,
-  extra,
-});
-const statusStyle: Record<Order["status"], string> = {
-  Lunas: "bg-green-500/15 text-green-400",
-  DP: "bg-amber-500/15 text-amber-400",
-  Batal: "bg-red-500/15 text-red-400",
-};
-
-// Ubah satu pesanan menjadi data untuk ringkasan / detail pesanan
-const detailDari = (od: Order): DataRingkasan => {
-  const [paket, qty = ""] = od.item.split(" ×");
-  const x = od.extra;
+const bentukStat = (s: {
+  label: string;
+  value: number;
+  delta: number;
+}): Stat => {
+  const pendapatan = s.label === "Pendapatan";
   return {
-    noPesanan: od.id,
-    tanggal: tanggalLengkap(od.tanggal),
-    jam: x.jam ?? "",
-    nama: od.customer,
-    hp: x.hp ?? "",
-    lokasi: od.lokasi,
-    gps: x.gps ?? "",
-    menu: [
-      { label: "Paket", nilai: paket },
-      { label: "Pilihan Sup", nilai: x.sup ?? "" },
-      { label: "Pilihan Es", nilai: x.es ?? "" },
-      { label: "Data Tambahan", nilai: x.dataTambahan ?? "" },
-    ],
-    jumlah: qty,
-    kebutuhan: [
-      { label: "Jumlah Meja", nilai: x.meja ?? "" },
-      { label: "Warna Taplak", nilai: x.taplak ?? "" },
-      { label: "Waiters", nilai: x.waiters ?? "" },
-    ],
-    bonus: x.bonus ?? [],
-    keterangan: x.keterangan ?? "",
+    label: s.label,
+    prefix: pendapatan ? "Rp" : undefined,
+    value: pendapatan
+      ? s.value >= 1e6
+        ? juta(s.value)
+        : s.value.toLocaleString("id-ID")
+      : s.label === "Pelanggan Repeat"
+        ? `${s.value} %`
+        : s.value.toLocaleString("id-ID"),
+    delta: `${s.delta >= 0 ? "+" : ""}${s.delta}%`,
+    up: s.delta >= 0,
   };
 };
 
-// Tiap batang = 2 bulan. value = total pesanan, income = pendapatan periode itu.
-const periods = [
-  {
-    label: "Jan–Feb",
-    value: 188,
-    income: "Rp 49 jt",
-    orders: [
-      o(
-        "#K001",
-        "Bu Rina",
-        "Tumpeng Mini ×2",
-        "2026-01-04",
-        850000,
-        "Lunas",
-        "Rumah Bu Rina, Jl. Mawar No. 12",
-      ),
-      o(
-        "#K006",
-        "PT Maju Jaya",
-        "Nasi Box ×80",
-        "2026-01-18",
-        2400000,
-        "Lunas",
-        "Kantor PT Maju Jaya",
-      ),
-      o(
-        "#K011",
-        "Pak Budi",
-        "Snack Box ×40",
-        "2026-02-02",
-        1000000,
-        "DP",
-        "Gedung Serbaguna Taman Surya",
-      ),
-      o(
-        "#K015",
-        "SMAN 1 Jember",
-        "Nasi Box ×120",
-        "2026-02-14",
-        3000000,
-        "Lunas",
-        "Aula SMAN 1 Jember",
-      ),
-      o(
-        "#K019",
-        "Bu Sari",
-        "Prasmanan ×30",
-        "2026-02-26",
-        2850000,
-        "Lunas",
-        "Rumah Bu Sari, Perumahan Palm",
-      ),
-    ],
-  },
-  {
-    label: "Mar–Apr",
-    value: 262,
-    income: "Rp 68 jt",
-    orders: [
-      o(
-        "#K024",
-        "Klinik Sehat",
-        "Snack Box ×60",
-        "2026-03-05",
-        1500000,
-        "Lunas",
-        "Klinik Sehat, Jl. Panjaitan",
-      ),
-      o(
-        "#K031",
-        "Keluarga Hadi",
-        "Prasmanan ×150",
-        "2026-03-19",
-        11250000,
-        "DP",
-        "Masjid At-Taqwa",
-        {
-          hp: "081234567890",
-          jam: "10.00 WIB",
-          gps: "https://www.google.com/maps?q=Masjid+At-Taqwa",
-          sup: "Bakso",
-          es: "Es Buah",
-          meja: "15",
-          taplak: "Putih",
-          waiters: "10",
-          bonus: ["Dekorasi meja", "Air mineral"],
-          keterangan: "Prasmanan disiapkan 1 jam sebelum acara dimulai.",
-        },
-      ),
-      o(
-        "#K037",
-        "Bu Rina",
-        "Nasi Box ×30",
-        "2026-03-28",
-        750000,
-        "Batal",
-        "Rumah Bu Rina, Jl. Mawar No. 12",
-      ),
-      o(
-        "#K043",
-        "PT Maju Jaya",
-        "Nasi Box ×100",
-        "2026-04-09",
-        2500000,
-        "Lunas",
-        "Kantor PT Maju Jaya",
-        {
-          hp: "082111223344",
-          jam: "12.00 WIB",
-          keterangan: "Antar ke lobi utama.",
-        },
-      ),
-      o(
-        "#K048",
-        "Koperasi Tani",
-        "Tumpeng ×3",
-        "2026-04-22",
-        1350000,
-        "DP",
-        "Balai Koperasi Tani",
-      ),
-    ],
-  },
-  {
-    label: "Mei–Jun",
-    value: 214,
-    income: "Rp 56 jt",
-    orders: [
-      o(
-        "#K056",
-        "Pak Budi",
-        "Nasi Box ×50",
-        "2026-05-03",
-        1250000,
-        "Lunas",
-        "Gedung Serbaguna Taman Surya",
-      ),
-      o(
-        "#K062",
-        "SMAN 1 Jember",
-        "Snack Box ×200",
-        "2026-05-17",
-        5000000,
-        "Lunas",
-        "Aula SMAN 1 Jember",
-      ),
-      o(
-        "#K069",
-        "Bu Sari",
-        "Tumpeng Mini ×1",
-        "2026-05-29",
-        450000,
-        "DP",
-        "Rumah Bu Sari, Perumahan Palm",
-      ),
-      o(
-        "#K075",
-        "PT Maju Jaya",
-        "Nasi Box ×90",
-        "2026-06-11",
-        2250000,
-        "Lunas",
-        "Kantor PT Maju Jaya",
-      ),
-      o(
-        "#K080",
-        "Klinik Sehat",
-        "Snack Box ×45",
-        "2026-06-24",
-        1125000,
-        "Lunas",
-        "Klinik Sehat, Jl. Panjaitan",
-      ),
-    ],
-  },
-  {
-    label: "Jul–Agu",
-    value: 341,
-    income: "Rp 89 jt",
-    orders: [
-      o(
-        "#K087",
-        "Koperasi Tani",
-        "Nasi Box ×200",
-        "2026-07-02",
-        5000000,
-        "Lunas",
-        "Balai Koperasi Tani",
-      ),
-      o(
-        "#K094",
-        "Keluarga Hadi",
-        "Prasmanan ×200",
-        "2026-07-15",
-        15000000,
-        "Lunas",
-        "Masjid At-Taqwa",
-        {
-          hp: "081298765432",
-          jam: "11.00 WIB",
-          sup: "Kimlo",
-          es: "Es Campur",
-          meja: "20",
-          taplak: "Merah maroon",
-          waiters: "14",
-          bonus: ["Dekorasi pelaminan"],
-        },
-      ),
-      o(
-        "#K102",
-        "Bu Rina",
-        "Tumpeng Mini ×4",
-        "2026-07-30",
-        1700000,
-        "Lunas",
-        "Rumah Bu Rina, Jl. Mawar No. 12",
-      ),
-      o(
-        "#K109",
-        "Kantor Desa",
-        "Nasi Box ×300",
-        "2026-08-12",
-        7500000,
-        "DP",
-        "Balai Desa",
-      ),
-      o(
-        "#K116",
-        "Pak Budi",
-        "Snack Box ×80",
-        "2026-08-27",
-        2000000,
-        "Lunas",
-        "Gedung Serbaguna Taman Surya",
-      ),
-    ],
-  },
-  {
-    label: "Sep–Okt",
-    value: 280,
-    income: "Rp 73 jt",
-    orders: [
-      o(
-        "#K123",
-        "PT Maju Jaya",
-        "Nasi Box ×120",
-        "2026-09-06",
-        3000000,
-        "Lunas",
-        "Kantor PT Maju Jaya",
-      ),
-      o(
-        "#K130",
-        "Bu Sari",
-        "Prasmanan ×60",
-        "2026-09-21",
-        5700000,
-        "Lunas",
-        "Rumah Bu Sari, Perumahan Palm",
-      ),
-      o(
-        "#K135",
-        "Klinik Sehat",
-        "Snack Box ×50",
-        "2026-10-04",
-        1250000,
-        "Batal",
-        "Klinik Sehat, Jl. Panjaitan",
-      ),
-      o(
-        "#K142",
-        "SMAN 1 Jember",
-        "Nasi Box ×150",
-        "2026-10-16",
-        3750000,
-        "Lunas",
-        "Aula SMAN 1 Jember",
-      ),
-      o(
-        "#K149",
-        "Keluarga Hadi",
-        "Tumpeng ×2",
-        "2026-10-29",
-        900000,
-        "DP",
-        "Masjid At-Taqwa",
-      ),
-    ],
-  },
-  {
-    label: "Nov–Des",
-    value: 305,
-    income: "Rp 79 jt",
-    orders: [
-      o(
-        "#K157",
-        "Koperasi Tani",
-        "Nasi Box ×100",
-        "2026-11-08",
-        2500000,
-        "Lunas",
-        "Balai Koperasi Tani",
-      ),
-      o(
-        "#K164",
-        "Bu Rina",
-        "Snack Box ×60",
-        "2026-11-24",
-        1500000,
-        "Lunas",
-        "Rumah Bu Rina, Jl. Mawar No. 12",
-      ),
-      o(
-        "#K171",
-        "PT Maju Jaya",
-        "Prasmanan ×120",
-        "2026-12-05",
-        11400000,
-        "Lunas",
-        "Kantor PT Maju Jaya",
-      ),
-      o(
-        "#K178",
-        "Kantor Desa",
-        "Nasi Box ×180",
-        "2026-12-17",
-        4500000,
-        "DP",
-        "Balai Desa",
-      ),
-      o(
-        "#K185",
-        "Pak Budi",
-        "Tumpeng Mini ×3",
-        "2026-12-28",
-        1275000,
-        "Lunas",
-        "Gedung Serbaguna Taman Surya",
-      ),
-    ],
-  },
-];
-const maxCount = Math.max(...periods.map((r) => r.value));
-const totalOrders = periods.reduce((sum, r) => sum + r.value, 0);
+// Pesanan satu periode (maksimal 100, lalu dipaginasi di layar)
+const ambilOrders = (p: Periode) =>
+  api
+    .get("/pesanan", {
+      params: { dari: p.dari, sampai: p.sampai, per_page: 100 },
+    })
+    .then((res) => (res.data?.data ?? []) as Order[]);
 
 const card = "rounded-2xl border border-white/10 bg-[#141414] p-5";
 const label = "font-mono text-xs text-neutral-400";
 
 /* ------------------------------------------------------------------ */
-/* Detail pesanan (muncul saat baris tabel diklik)                      */
+/* Paginasi                                                             */
 /* ------------------------------------------------------------------ */
-
-function DetailPesanan({
-  order,
-  onClose,
-}: {
-  order: Order;
-  onClose: () => void;
-}) {
-  // Tekan Esc untuk menutup
-  useEffect(() => {
-    const tutup = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", tutup);
-    return () => window.removeEventListener("keydown", tutup);
-  }, [onClose]);
-
-  const data = detailDari(order);
-
-  return (
-    <>
-      {createPortal(
-        <div
-          className="fixed inset-0 z-50 grid place-items-center bg-black/70 p-4 backdrop-blur-sm"
-          onClick={onClose}
-        >
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-label={`Detail pesanan ${order.id}`}
-            className="flex max-h-[92vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#141414] text-neutral-100"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex shrink-0 items-start justify-between gap-3 border-b border-white/10 px-5 py-4">
-              <div>
-                <p className="text-sm text-neutral-200">Detail Pesanan</p>
-                <p className={`${label} mt-1`}>
-                  {order.id} · Total Rp {order.amount.toLocaleString("id-ID")}
-                </p>
-              </div>
-              <div className="flex items-center gap-2">
-                <span
-                  className={`rounded-md px-2 py-0.5 font-mono text-[11px] ${statusStyle[order.status]}`}
-                >
-                  {order.status}
-                </span>
-                <button
-                  onClick={() => window.print()}
-                  className="flex items-center gap-1.5 rounded-lg border border-white/10 px-2.5 py-1.5 text-xs text-neutral-300 hover:bg-white/10"
-                >
-                  <Printer className="size-3.5" /> Cetak
-                </button>
-                <button
-                  onClick={onClose}
-                  autoFocus
-                  aria-label="Tutup"
-                  className="grid size-8 place-items-center rounded-lg border border-white/10 text-neutral-400 hover:text-white"
-                >
-                  <X className="size-4" />
-                </button>
-              </div>
-            </div>
-            <div className="min-h-0 overflow-y-auto overscroll-contain bg-neutral-100 p-4 sm:p-6">
-              <div className="rounded-xl bg-white p-6 shadow-sm sm:p-8">
-                <RingkasanPesanan data={data} sembunyikanKosong />
-              </div>
-            </div>
-          </div>
-        </div>,
-        document.body,
-      )}
-      {/* Versi cetak, hanya dipakai saat tombol Cetak ditekan */}
-      <AreaCetak data={data} />
-    </>
-  );
-}
 
 // Jumlah baris per halaman. Naikkan (mis. 10) kalau datanya sudah banyak.
 const PER_HAL = 3;
@@ -660,18 +195,86 @@ function Pagination({
   );
 }
 
+/* ------------------------------------------------------------------ */
+/* Halaman                                                              */
+/* ------------------------------------------------------------------ */
+
 export default function DashboardPage() {
-  const [rb, setRb] = useState(3);
+  const [stats, setStats] = useState<Stat[]>(statAwal);
+  const [periods, setPeriods] = useState<Periode[]>(periodeAwal);
+  const [products, setProducts] = useState<MenuTerlaris[]>([]);
+  const [tahun, setTahun] = useState<number | null>(null);
+  const [sumber, setSumber] = useState<"memuat" | "api" | "gagal">("memuat");
+  const [ordersMap, setOrdersMap] = useState<Record<string, Order[]>>({});
+  const [rb, setRb] = useState(0);
   const [sel, setSel] = useState<Order | null>(null);
   const [hal, setHal] = useState(1);
   const [halMenu, setHalMenu] = useState(1);
-  const cur = periods[rb];
 
+  // Ambil ringkasan dashboard dari API
+  useEffect(() => {
+    api
+      .get("/dashboard")
+      .then((res) => {
+        const d = res.data;
+        const per: Periode[] = d.periode ?? periodeAwal;
+        setStats(
+          LABEL_STAT.map((nama) => {
+            const s = (d.stats ?? []).find(
+              (x: { label: string }) => x.label === nama,
+            );
+            return s
+              ? bentukStat(s)
+              : { label: nama, value: "–", delta: "0%", up: true };
+          }),
+        );
+        setPeriods(per);
+        setTahun(d.tahun ?? null);
+        setProducts(
+          (d.menu_terlaris ?? []).map(
+            (m: {
+              nama: string;
+              pesanan: number;
+              porsi: number;
+              pendapatan: number;
+              pertumbuhan: number;
+            }) => ({
+              name: m.nama,
+              income: rpJt(m.pendapatan),
+              orders: m.pesanan,
+              growth: m.pertumbuhan,
+              portions: m.porsi.toLocaleString("id-ID"),
+            }),
+          ),
+        );
+        // Pilih periode (2 bulan) yang sedang berjalan, lalu muat pesanannya
+        const i = Math.min(
+          Math.floor(new Date().getMonth() / 2),
+          per.length - 1,
+        );
+        setRb(i);
+        const p = per[i];
+        if (p?.dari) {
+          ambilOrders(p)
+            .then((list) => setOrdersMap((m) => ({ ...m, [p.dari]: list })))
+            .catch(() => {});
+        }
+        setSumber("api");
+      })
+      .catch(() => setSumber("gagal"));
+  }, []);
+
+  const cur = periods[rb];
+  const maxCount = Math.max(1, ...periods.map((r) => r.value));
+  const totalOrders = periods.reduce((sum, r) => sum + r.value, 0);
+
+  const orders = ordersMap[cur.dari] ?? [];
+  const memuatOrders = Boolean(cur.dari) && !ordersMap[cur.dari];
   const halOrder = Math.min(
     hal,
-    Math.max(1, Math.ceil(cur.orders.length / PER_HAL)),
+    Math.max(1, Math.ceil(orders.length / PER_HAL)),
   );
-  const orderTampil = cur.orders.slice(
+  const orderTampil = orders.slice(
     (halOrder - 1) * PER_HAL,
     halOrder * PER_HAL,
   );
@@ -683,11 +286,24 @@ export default function DashboardPage() {
     (halMenuAman - 1) * PER_HAL,
     halMenuAman * PER_HAL,
   );
-  // Ganti periode (batang grafik) -> kembali ke halaman 1
+
+  // Perubahan dibanding periode (2 bulan) sebelumnya
+  const sebelumnya = rb > 0 ? periods[rb - 1].value : 0;
+  const perubahan =
+    sebelumnya > 0
+      ? Math.round(((cur.value - sebelumnya) / sebelumnya) * 1000) / 10
+      : null;
+
+  // Ganti periode (batang grafik) -> halaman 1, muat pesanannya kalau belum ada
   const pilihPeriode = (i: number) => {
-    if (i !== rb) {
-      setRb(i);
-      setHal(1);
+    if (i === rb) return;
+    setRb(i);
+    setHal(1);
+    const p = periods[i];
+    if (p.dari && !ordersMap[p.dari]) {
+      ambilOrders(p)
+        .then((list) => setOrdersMap((m) => ({ ...m, [p.dari]: list })))
+        .catch(() => {});
     }
   };
 
@@ -698,7 +314,9 @@ export default function DashboardPage() {
           <span className="flex items-center gap-2 text-sm">
             <LayoutDashboard className="size-4 text-neutral-400" /> Dashboard
           </span>
-          <span className={label}>14 Pesanan Aktif</span>
+          {sumber === "api" && (
+            <span className={label}>{stats[0].value} pesanan bulan ini</span>
+          )}
         </div>
         <div className="flex items-center gap-3">
           <Link
@@ -718,6 +336,13 @@ export default function DashboardPage() {
 
       <div className="space-y-5 px-6 pb-10">
         <h1 className="text-3xl font-medium">Selamat pagi, Admin</h1>
+
+        {sumber === "gagal" && (
+          <p className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-400">
+            Tidak bisa terhubung ke server. Pastikan Laravel berjalan dan
+            NEXT_PUBLIC_API_URL di .env.local sudah benar.
+          </p>
+        )}
 
         {/* Stat cards */}
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
@@ -750,23 +375,32 @@ export default function DashboardPage() {
                 {s.value}
               </p>
               <p className="mt-3 font-mono text-[10px] text-neutral-500">
-                1 Okt – 29 Okt 2026
+                Bulan ini · dibanding bulan lalu
               </p>
             </div>
           ))}
         </div>
 
-        {/* Revenue + orders of the hovered period */}
+        {/* Grafik + pesanan periode yang dipilih */}
         <div className="grid gap-4 xl:grid-cols-[5fr_8fr]">
           <section className={card}>
-            <p className={label}>Total Pesanan</p>
+            <p className={label}>Total Pesanan{tahun ? ` ${tahun}` : ""}</p>
             <p className="mt-1 font-mono text-2xl">
               {totalOrders.toLocaleString("id-ID")}
             </p>
-            <p className="mt-2 font-mono text-xs">
-              <span className="text-red-500">2,5% ↓</span>{" "}
-              <span className="text-neutral-500">Dibanding periode lalu</span>
-            </p>
+            {perubahan !== null && (
+              <p className="mt-2 font-mono text-xs">
+                <span
+                  className={perubahan >= 0 ? "text-green-500" : "text-red-500"}
+                >
+                  {Math.abs(perubahan).toLocaleString("id-ID")}%{" "}
+                  {perubahan >= 0 ? "↑" : "↓"}
+                </span>{" "}
+                <span className="text-neutral-500">
+                  Dibanding periode sebelumnya
+                </span>
+              </p>
+            )}
             <div className="relative mt-10 h-56">
               {[0, 1, 2, 3].map((i) => (
                 <div
@@ -777,7 +411,7 @@ export default function DashboardPage() {
               ))}
               <div
                 className="pointer-events-none absolute inset-x-0 border-t border-dashed border-white/30"
-                style={{ bottom: `${(periods[rb].value / maxCount) * 100}%` }}
+                style={{ bottom: `${(cur.value / maxCount) * 100}%` }}
               />
               <div className="relative flex h-full gap-2 sm:gap-3">
                 {periods.map((r, i) => (
@@ -793,7 +427,10 @@ export default function DashboardPage() {
                           ? "bg-gradient-to-b from-white via-orange-500 to-orange-600"
                           : "bg-gradient-to-b from-neutral-700 to-neutral-800"
                       }`}
-                      style={{ height: `${(r.value / maxCount) * 100}%` }}
+                      style={{
+                        height: `${(r.value / maxCount) * 100}%`,
+                        minHeight: 4,
+                      }}
                     >
                       {i === rb && (
                         <span className="absolute -top-9 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full border border-white/20 bg-neutral-900 px-2.5 py-1 font-mono text-[11px]">
@@ -824,159 +461,174 @@ export default function DashboardPage() {
               <div>
                 <p className="text-sm text-neutral-300">Pesanan {cur.label}</p>
                 <p className={`${label} mt-1`}>
-                  {cur.value} pesanan · menampilkan {cur.orders.length}
+                  {cur.value} pesanan · menampilkan {orders.length}
                 </p>
               </div>
               <span className="rounded-md bg-orange-500/15 px-2 py-1 font-mono text-xs text-orange-400">
-                Pendapatan {cur.income}
+                Pendapatan {rpJt(cur.income)}
               </span>
             </div>
 
-            {/* Tabel Tanggal | Lokasi — klik baris untuk melihat detail */}
-            <div className="mt-4 overflow-x-auto">
-              <table className="w-full table-fixed text-sm">
-                <thead>
-                  <tr className="bg-white/5 text-left text-[11px] uppercase text-neutral-400">
-                    <th className="w-28 px-3 py-2.5 font-medium first:rounded-l-lg sm:w-44">
-                      Tanggal
-                    </th>
-                    <th className="px-3 py-2.5 font-medium last:rounded-r-lg">
-                      Lokasi
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-white/5">
-                  {orderTampil.map((od) => (
-                    <tr
-                      key={od.id}
-                      tabIndex={0}
-                      title="Klik untuk melihat detail pesanan"
-                      onClick={() => setSel(od)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" || e.key === " ") {
-                          e.preventDefault();
-                          setSel(od);
-                        }
-                      }}
-                      className="cursor-pointer transition-colors hover:bg-white/5 focus-visible:bg-white/5 focus-visible:outline-none"
-                    >
-                      <td className="whitespace-nowrap px-3 py-3 font-mono text-neutral-400">
-                        {tanggalSingkat(od.tanggal)}
-                      </td>
-                      <td className="break-words px-3 py-3">{od.lokasi}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <p className="mt-3 text-xs text-neutral-500">
-              Klik salah satu baris untuk melihat detail pesanan.
-            </p>
-            <Pagination
-              total={cur.orders.length}
-              page={halOrder}
-              perPage={PER_HAL}
-              onPage={setHal}
-            />
-          </section>
-        </div>
-
-        {/* Top products */}
-        <div className="grid gap-4">
-          <section className={card}>
-            <div className="flex items-center justify-between">
-              <p className="text-sm text-neutral-300">Menu Terlaris</p>
-              <button className="text-xs text-neutral-500 hover:text-neutral-300">
-                Lihat Semua
-              </button>
-            </div>
-            {/* Layar lebar: tabel */}
-            <div className="mt-4 hidden overflow-x-auto lg:block">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="bg-white/5 text-left text-[11px] uppercase text-neutral-400">
-                    {[
-                      "Menu",
-                      "Pendapatan",
-                      "Pesanan",
-                      "Pertumbuhan",
-                      "Porsi",
-                      "Rating",
-                    ].map((h) => (
-                      <th
-                        key={h}
-                        className="px-3 py-2.5 font-medium first:rounded-l-lg last:rounded-r-lg"
-                      >
-                        {h}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-white/5">
-                  {menuTampil.map((p) => (
-                    <tr key={p.name}>
-                      <td className="px-3 py-3">{p.name}</td>
-                      <td className="px-3 py-3 font-mono">{p.income}</td>
-                      <td className="px-3 py-3 font-mono">{p.orders}</td>
-                      <td className="px-3 py-3">
-                        <span
-                          className={`flex items-center gap-1 font-mono ${p.growth > 0 ? "text-indigo-300" : "text-red-400"}`}
+            {orders.length === 0 ? (
+              <p className="mt-6 rounded-lg bg-white/5 px-4 py-6 text-center text-sm text-neutral-500">
+                {memuatOrders
+                  ? "Memuat pesanan..."
+                  : "Belum ada pesanan di periode ini."}
+              </p>
+            ) : (
+              <>
+                {/* Tabel Tanggal | Lokasi: klik baris untuk melihat detail */}
+                <div className="mt-4 overflow-x-auto">
+                  <table className="w-full table-fixed text-sm">
+                    <thead>
+                      <tr className="bg-white/5 text-left text-[11px] uppercase text-neutral-400">
+                        <th className="w-28 px-3 py-2.5 font-medium first:rounded-l-lg sm:w-44">
+                          Tanggal
+                        </th>
+                        <th className="px-3 py-2.5 font-medium last:rounded-r-lg">
+                          Lokasi
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-white/5">
+                      {orderTampil.map((od) => (
+                        <tr
+                          key={od.id}
+                          tabIndex={0}
+                          title="Klik untuk melihat detail pesanan"
+                          onClick={() => setSel(od)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.preventDefault();
+                              setSel(od);
+                            }
+                          }}
+                          className="cursor-pointer transition-colors hover:bg-white/5 focus-visible:bg-white/5 focus-visible:outline-none"
                         >
-                          {p.growth > 0 ? (
-                            <ArrowUpRight className="size-3.5" />
-                          ) : (
-                            <ArrowDownRight className="size-3.5" />
-                          )}
-                          {Math.abs(p.growth)}%
-                        </span>
-                      </td>
-                      <td className="px-3 py-3 font-mono">{p.portions}</td>
-                      <td className="px-3 py-3 font-mono">{p.rating}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            {/* Layar kecil: satu kartu per menu, tanpa geser kiri-kanan */}
-            <ul className="mt-4 divide-y divide-white/5 lg:hidden">
-              {menuTampil.map((p) => (
-                <li key={p.name} className="py-3">
-                  <div className="flex items-start justify-between gap-3">
-                    <p className="min-w-0 break-words text-sm font-medium">
-                      {p.name}
-                    </p>
-                    <span className="shrink-0 font-mono text-sm">
-                      {p.income}
-                    </span>
-                  </div>
-                  <p className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 font-mono text-xs text-neutral-500">
-                    <span>{p.orders} pesanan</span>
-                    <span>{p.portions} porsi</span>
-                    <span>★ {p.rating}</span>
-                    <span
-                      className={`flex items-center gap-0.5 ${p.growth > 0 ? "text-indigo-300" : "text-red-400"}`}
-                    >
-                      {p.growth > 0 ? (
-                        <ArrowUpRight className="size-3.5" />
-                      ) : (
-                        <ArrowDownRight className="size-3.5" />
-                      )}
-                      {Math.abs(p.growth)}%
-                    </span>
-                  </p>
-                </li>
-              ))}
-            </ul>
-
-            <Pagination
-              total={products.length}
-              page={halMenuAman}
-              perPage={PER_HAL}
-              onPage={setHalMenu}
-            />
+                          <td className="whitespace-nowrap px-3 py-3 font-mono text-neutral-400">
+                            {tanggalSingkat(od.tanggal)}
+                          </td>
+                          <td className="break-words px-3 py-3">{od.lokasi}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <p className="mt-3 text-xs text-neutral-500">
+                  Klik salah satu baris untuk melihat detail pesanan.
+                </p>
+                <Pagination
+                  total={orders.length}
+                  page={halOrder}
+                  perPage={PER_HAL}
+                  onPage={setHal}
+                />
+              </>
+            )}
           </section>
         </div>
+
+        {/* Menu terlaris */}
+        <section className={card}>
+          <div className="flex items-center justify-between">
+            <p className="text-sm text-neutral-300">
+              Menu Terlaris{tahun ? ` ${tahun}` : ""}
+            </p>
+          </div>
+
+          {products.length === 0 ? (
+            <p className="mt-6 rounded-lg bg-white/5 px-4 py-6 text-center text-sm text-neutral-500">
+              {sumber === "memuat"
+                ? "Memuat..."
+                : "Belum ada data menu terlaris."}
+            </p>
+          ) : (
+            <>
+              {/* Layar lebar: tabel */}
+              <div className="mt-4 hidden overflow-x-auto lg:block">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="bg-white/5 text-left text-[11px] uppercase text-neutral-400">
+                      {[
+                        "Menu",
+                        "Pendapatan",
+                        "Pesanan",
+                        "Pertumbuhan",
+                        "Porsi",
+                      ].map((h) => (
+                        <th
+                          key={h}
+                          className="px-3 py-2.5 font-medium first:rounded-l-lg last:rounded-r-lg"
+                        >
+                          {h}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-white/5">
+                    {menuTampil.map((p) => (
+                      <tr key={p.name}>
+                        <td className="px-3 py-3">{p.name}</td>
+                        <td className="px-3 py-3 font-mono">{p.income}</td>
+                        <td className="px-3 py-3 font-mono">{p.orders}</td>
+                        <td className="px-3 py-3">
+                          <span
+                            className={`flex items-center gap-1 font-mono ${p.growth >= 0 ? "text-indigo-300" : "text-red-400"}`}
+                          >
+                            {p.growth >= 0 ? (
+                              <ArrowUpRight className="size-3.5" />
+                            ) : (
+                              <ArrowDownRight className="size-3.5" />
+                            )}
+                            {Math.abs(p.growth)}%
+                          </span>
+                        </td>
+                        <td className="px-3 py-3 font-mono">{p.portions}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Layar kecil: satu kartu per menu, tanpa geser kiri-kanan */}
+              <ul className="mt-4 divide-y divide-white/5 lg:hidden">
+                {menuTampil.map((p) => (
+                  <li key={p.name} className="py-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <p className="min-w-0 break-words text-sm font-medium">
+                        {p.name}
+                      </p>
+                      <span className="shrink-0 font-mono text-sm">
+                        {p.income}
+                      </span>
+                    </div>
+                    <p className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 font-mono text-xs text-neutral-500">
+                      <span>{p.orders} pesanan</span>
+                      <span>{p.portions} porsi</span>
+                      <span
+                        className={`flex items-center gap-0.5 ${p.growth >= 0 ? "text-indigo-300" : "text-red-400"}`}
+                      >
+                        {p.growth >= 0 ? (
+                          <ArrowUpRight className="size-3.5" />
+                        ) : (
+                          <ArrowDownRight className="size-3.5" />
+                        )}
+                        {Math.abs(p.growth)}%
+                      </span>
+                    </p>
+                  </li>
+                ))}
+              </ul>
+
+              <Pagination
+                total={products.length}
+                page={halMenuAman}
+                perPage={PER_HAL}
+                onPage={setHalMenu}
+              />
+            </>
+          )}
+        </section>
       </div>
 
       {sel && <DetailPesanan order={sel} onClose={() => setSel(null)} />}

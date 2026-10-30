@@ -1,23 +1,24 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import Link from "next/link";
+import { useEffect, useMemo, useRef, useState } from "react";
 import AppShell, { favorites } from "@/components/AppShell";
 import {
   DetailPesanan,
-  o,
   statusStyle,
   type Order,
 } from "@/components/DetailPesanan";
 import { hariDari, tanggalSingkat } from "@/components/RingkasanPesanan";
+import { ambilJadwal } from "@/lib/jadwal";
 import {
   Bell,
   CalendarDays,
   ChevronDown,
   Cone,
   Cookie,
+  Loader2,
   MapPin,
   Package,
+  RefreshCw,
   Utensils,
   type LucideIcon,
 } from "lucide-react";
@@ -25,470 +26,13 @@ import {
 /* ------------------------------------------------------------------ */
 /* Data pesanan                                                        */
 /*                                                                     */
-/* Acara di kalender = pesanan. 30 pesanan pertama sama dengan yang    */
-/* tampil di Dashboard. Pesanan K143–K156 adalah contoh tambahan       */
-/* (nomornya mengisi celah di antara K142 dan K157) supaya jadwal      */
-/* minggu ini tidak kosong. Ganti dengan sumber data yang sama dengan  */
-/* Dashboard kalau sudah ada.                                          */
+/* Diambil dari GET /api/jadwal?bulan=YYYY-MM lewat ambilJadwal()      */
+/* (lihat lib/jadwal.ts). Setiap kali bulan diganti, data bulan itu    */
+/* diambil ulang.                                                      */
 /*                                                                     */
 /* Pesanan yang punya extra.jam tampil di grid jam. Yang belum punya   */
 /* jam tampil di baris "Tanpa Jam" di bawah header hari.               */
 /* ------------------------------------------------------------------ */
-
-const pesanan: Order[] = [
-  // Jan–Feb
-  o(
-    "#K001",
-    "Bu Rina",
-    "Tumpeng Mini ×2",
-    "2026-01-04",
-    850000,
-    "Lunas",
-    "Rumah Bu Rina, Jl. Mawar No. 12",
-  ),
-  o(
-    "#K006",
-    "PT Maju Jaya",
-    "Nasi Box ×80",
-    "2026-01-18",
-    2400000,
-    "Lunas",
-    "Kantor PT Maju Jaya",
-  ),
-  o(
-    "#K011",
-    "Pak Budi",
-    "Snack Box ×40",
-    "2026-02-02",
-    1000000,
-    "DP",
-    "Gedung Serbaguna Taman Surya",
-  ),
-  o(
-    "#K015",
-    "SMAN 1 Jember",
-    "Nasi Box ×120",
-    "2026-02-14",
-    3000000,
-    "Lunas",
-    "Aula SMAN 1 Jember",
-  ),
-  o(
-    "#K019",
-    "Bu Sari",
-    "Prasmanan ×30",
-    "2026-02-26",
-    2850000,
-    "Lunas",
-    "Rumah Bu Sari, Perumahan Palm",
-  ),
-  // Mar–Apr
-  o(
-    "#K024",
-    "Klinik Sehat",
-    "Snack Box ×60",
-    "2026-03-05",
-    1500000,
-    "Lunas",
-    "Klinik Sehat, Jl. Panjaitan",
-  ),
-  o(
-    "#K031",
-    "Keluarga Hadi",
-    "Prasmanan ×150",
-    "2026-03-19",
-    11250000,
-    "DP",
-    "Masjid At-Taqwa",
-    {
-      hp: "081234567890",
-      jam: "10.00 WIB",
-      gps: "https://www.google.com/maps?q=Masjid+At-Taqwa",
-      sup: "Bakso",
-      es: "Es Buah",
-      meja: "15",
-      taplak: "Putih",
-      waiters: "10",
-      bonus: ["Dekorasi meja", "Air mineral"],
-      keterangan: "Prasmanan disiapkan 1 jam sebelum acara dimulai.",
-    },
-  ),
-  o(
-    "#K037",
-    "Bu Rina",
-    "Nasi Box ×30",
-    "2026-03-28",
-    750000,
-    "Batal",
-    "Rumah Bu Rina, Jl. Mawar No. 12",
-  ),
-  o(
-    "#K043",
-    "PT Maju Jaya",
-    "Nasi Box ×100",
-    "2026-04-09",
-    2500000,
-    "Lunas",
-    "Kantor PT Maju Jaya",
-    {
-      hp: "082111223344",
-      jam: "12.00 WIB",
-      keterangan: "Antar ke lobi utama.",
-    },
-  ),
-  o(
-    "#K048",
-    "Koperasi Tani",
-    "Tumpeng ×3",
-    "2026-04-22",
-    1350000,
-    "DP",
-    "Balai Koperasi Tani",
-  ),
-  // Mei–Jun
-  o(
-    "#K056",
-    "Pak Budi",
-    "Nasi Box ×50",
-    "2026-05-03",
-    1250000,
-    "Lunas",
-    "Gedung Serbaguna Taman Surya",
-  ),
-  o(
-    "#K062",
-    "SMAN 1 Jember",
-    "Snack Box ×200",
-    "2026-05-17",
-    5000000,
-    "Lunas",
-    "Aula SMAN 1 Jember",
-  ),
-  o(
-    "#K069",
-    "Bu Sari",
-    "Tumpeng Mini ×1",
-    "2026-05-29",
-    450000,
-    "DP",
-    "Rumah Bu Sari, Perumahan Palm",
-  ),
-  o(
-    "#K075",
-    "PT Maju Jaya",
-    "Nasi Box ×90",
-    "2026-06-11",
-    2250000,
-    "Lunas",
-    "Kantor PT Maju Jaya",
-  ),
-  o(
-    "#K080",
-    "Klinik Sehat",
-    "Snack Box ×45",
-    "2026-06-24",
-    1125000,
-    "Lunas",
-    "Klinik Sehat, Jl. Panjaitan",
-  ),
-  // Jul–Agu
-  o(
-    "#K087",
-    "Koperasi Tani",
-    "Nasi Box ×200",
-    "2026-07-02",
-    5000000,
-    "Lunas",
-    "Balai Koperasi Tani",
-  ),
-  o(
-    "#K094",
-    "Keluarga Hadi",
-    "Prasmanan ×200",
-    "2026-07-15",
-    15000000,
-    "Lunas",
-    "Masjid At-Taqwa",
-    {
-      hp: "081298765432",
-      jam: "11.00 WIB",
-      sup: "Kimlo",
-      es: "Es Campur",
-      meja: "20",
-      taplak: "Merah maroon",
-      waiters: "14",
-      bonus: ["Dekorasi pelaminan"],
-    },
-  ),
-  o(
-    "#K102",
-    "Bu Rina",
-    "Tumpeng Mini ×4",
-    "2026-07-30",
-    1700000,
-    "Lunas",
-    "Rumah Bu Rina, Jl. Mawar No. 12",
-  ),
-  o(
-    "#K109",
-    "Kantor Desa",
-    "Nasi Box ×300",
-    "2026-08-12",
-    7500000,
-    "DP",
-    "Balai Desa",
-  ),
-  o(
-    "#K116",
-    "Pak Budi",
-    "Snack Box ×80",
-    "2026-08-27",
-    2000000,
-    "Lunas",
-    "Gedung Serbaguna Taman Surya",
-  ),
-  // Sep–Okt
-  o(
-    "#K123",
-    "PT Maju Jaya",
-    "Nasi Box ×120",
-    "2026-09-06",
-    3000000,
-    "Lunas",
-    "Kantor PT Maju Jaya",
-  ),
-  o(
-    "#K130",
-    "Bu Sari",
-    "Prasmanan ×60",
-    "2026-09-21",
-    5700000,
-    "Lunas",
-    "Rumah Bu Sari, Perumahan Palm",
-  ),
-  o(
-    "#K135",
-    "Klinik Sehat",
-    "Snack Box ×50",
-    "2026-10-04",
-    1250000,
-    "Batal",
-    "Klinik Sehat, Jl. Panjaitan",
-  ),
-  o(
-    "#K142",
-    "SMAN 1 Jember",
-    "Nasi Box ×150",
-    "2026-10-16",
-    3750000,
-    "Lunas",
-    "Aula SMAN 1 Jember",
-  ),
-  // ↓ contoh tambahan (K143–K148)
-  o(
-    "#K143",
-    "PT Maju Jaya",
-    "Snack Box ×80",
-    "2026-10-20",
-    2000000,
-    "Lunas",
-    "Kantor PT Maju Jaya",
-    { jam: "09.00 WIB" },
-  ),
-  o(
-    "#K144",
-    "Bu Sari",
-    "Tumpeng Mini ×2",
-    "2026-10-22",
-    850000,
-    "Lunas",
-    "Rumah Bu Sari, Perumahan Palm",
-  ),
-  o(
-    "#K145",
-    "Pak Budi",
-    "Nasi Box ×60",
-    "2026-10-24",
-    1500000,
-    "Lunas",
-    "Gedung Serbaguna Taman Surya",
-    { jam: "11.00 WIB" },
-  ),
-  o(
-    "#K146",
-    "Klinik Sehat",
-    "Snack Box ×50",
-    "2026-10-26",
-    1250000,
-    "Lunas",
-    "Klinik Sehat, Jl. Panjaitan",
-    { jam: "09.00 WIB" },
-  ),
-  o(
-    "#K147",
-    "SMAN 1 Jember",
-    "Nasi Box ×120",
-    "2026-10-27",
-    3000000,
-    "Lunas",
-    "Aula SMAN 1 Jember",
-    {
-      jam: "07.00 WIB",
-      keterangan: "Antar lewat pintu samping aula.",
-    },
-  ),
-  o(
-    "#K148",
-    "Bu Rina",
-    "Nasi Box ×50",
-    "2026-10-28",
-    1250000,
-    "Lunas",
-    "Rumah Bu Rina, Jl. Mawar No. 12",
-    { jam: "16.00 WIB" },
-  ),
-  o(
-    "#K149",
-    "Keluarga Hadi",
-    "Tumpeng ×2",
-    "2026-10-29",
-    900000,
-    "DP",
-    "Masjid At-Taqwa",
-  ),
-  // ↓ contoh tambahan (K150–K156)
-  o(
-    "#K150",
-    "PT Maju Jaya",
-    "Nasi Box ×100",
-    "2026-10-29",
-    2500000,
-    "Lunas",
-    "Kantor PT Maju Jaya",
-    {
-      hp: "082111223344",
-      jam: "12.00 WIB",
-      keterangan: "Antar ke lobi utama.",
-    },
-  ),
-  o(
-    "#K151",
-    "Kantor Desa",
-    "Nasi Box ×150",
-    "2026-10-30",
-    3750000,
-    "DP",
-    "Balai Desa",
-    { jam: "10.00 WIB" },
-  ),
-  o(
-    "#K152",
-    "Keluarga Hadi",
-    "Prasmanan ×250",
-    "2026-10-31",
-    18750000,
-    "DP",
-    "Masjid At-Taqwa",
-    {
-      hp: "081234567890",
-      jam: "10.00 WIB",
-      gps: "https://www.google.com/maps?q=Masjid+At-Taqwa",
-      sup: "Bakso",
-      es: "Es Buah",
-      meja: "25",
-      taplak: "Putih",
-      waiters: "16",
-      bonus: ["Dekorasi meja", "Air mineral"],
-      keterangan: "Tim dapur mulai memasak pukul 05.00.",
-    },
-  ),
-  o(
-    "#K153",
-    "Bu Sari",
-    "Prasmanan ×40",
-    "2026-10-31",
-    3800000,
-    "Lunas",
-    "Rumah Bu Sari, Perumahan Palm",
-    { jam: "11.00 WIB" },
-  ),
-  o(
-    "#K154",
-    "Bu Rina",
-    "Snack Box ×60",
-    "2026-11-01",
-    1500000,
-    "Lunas",
-    "Rumah Bu Rina, Jl. Mawar No. 12",
-    { jam: "08.00 WIB" },
-  ),
-  o(
-    "#K155",
-    "PT Maju Jaya",
-    "Nasi Box ×90",
-    "2026-11-03",
-    2250000,
-    "Lunas",
-    "Kantor PT Maju Jaya",
-    { jam: "12.00 WIB" },
-  ),
-  o(
-    "#K156",
-    "SMAN 1 Jember",
-    "Snack Box ×200",
-    "2026-11-05",
-    5000000,
-    "DP",
-    "Aula SMAN 1 Jember",
-    { jam: "09.00 WIB" },
-  ),
-  // Nov–Des
-  o(
-    "#K157",
-    "Koperasi Tani",
-    "Nasi Box ×100",
-    "2026-11-08",
-    2500000,
-    "Lunas",
-    "Balai Koperasi Tani",
-  ),
-  o(
-    "#K164",
-    "Bu Rina",
-    "Snack Box ×60",
-    "2026-11-24",
-    1500000,
-    "Lunas",
-    "Rumah Bu Rina, Jl. Mawar No. 12",
-  ),
-  o(
-    "#K171",
-    "PT Maju Jaya",
-    "Prasmanan ×120",
-    "2026-12-05",
-    11400000,
-    "Lunas",
-    "Kantor PT Maju Jaya",
-  ),
-  o(
-    "#K178",
-    "Kantor Desa",
-    "Nasi Box ×180",
-    "2026-12-17",
-    4500000,
-    "DP",
-    "Balai Desa",
-  ),
-  o(
-    "#K185",
-    "Pak Budi",
-    "Tumpeng Mini ×3",
-    "2026-12-28",
-    1275000,
-    "Lunas",
-    "Gedung Serbaguna Taman Surya",
-  ),
-];
 
 /* ------------------------------------------------------------------ */
 /* Konstanta kalender                                                  */
@@ -511,10 +55,6 @@ const GRID_H = HOURS.length * ROW_H;
 // Kartu di kalender digambar selama durasi ini.
 const DURASI_ACARA = 2;
 
-// "Hari ini" untuk data contoh di atas. Ganti dengan new Date() kalau sudah
-// memakai data asli.
-const DEMO_TODAY = new Date(2026, 9, 29);
-
 const card = "rounded-2xl border border-white/10 bg-[#141414]";
 const label = "font-mono text-xs text-neutral-400";
 
@@ -525,8 +65,6 @@ const label = "font-mono text-xs text-neutral-400";
 const pad = (n: number) => String(n).padStart(2, "0");
 const toKey = (d: Date) =>
   `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-
-const todayKey = toKey(DEMO_TODAY);
 
 /** "29 Okt" */
 const tglPendek = (iso: string) =>
@@ -561,30 +99,15 @@ const hariDalamBulan = (ym: string) => {
   const jumlah = new Date(y, m, 0).getDate();
   return Array.from({ length: jumlah }, (_, i) => `${ym}-${pad(i + 1)}`);
 };
-
-const bulanIniKey = bulanDari(todayKey);
-
-// Isi dropdown: dari bulan pesanan paling awal sampai paling akhir,
-// selalu termasuk bulan ini.
-const DAFTAR_BULAN = (() => {
-  const semua = [
-    ...pesanan.map((p) => bulanDari(p.tanggal)),
-    bulanIniKey,
-  ].sort();
-  const [y0, m0] = semua[0].split("-").map(Number);
-  const [y1, m1] = semua[semua.length - 1].split("-").map(Number);
-  const out: string[] = [];
-  let y = y0;
-  let m = m0;
-  while (y < y1 || (y === y1 && m <= m1)) {
-    out.push(`${y}-${pad(m)}`);
-    if (++m > 12) {
-      m = 1;
-      y++;
-    }
-  }
-  return out;
-})();
+/** "2026-10" digeser n bulan */
+const geserBulan = (ym: string, n: number) => {
+  const [y, m] = ym.split("-").map(Number);
+  const d = new Date(y, m - 1 + n, 1);
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}`;
+};
+// Isi dropdown: 12 bulan ke belakang sampai 12 bulan ke depan dari bulan ini.
+const daftarBulan = (tengah: string) =>
+  Array.from({ length: 25 }, (_, i) => geserBulan(tengah, i - 12));
 
 /* ------------------------------------------------------------------ */
 /* Pesanan → acara                                                     */
@@ -598,7 +121,7 @@ const jamMulai = (p: Order): number | null => {
 
 type Terjadwal = { order: Order; start: number; end: number };
 
-const PER_HARI = (() => {
+function kelompokkan(pesanan: Order[]) {
   const map = new Map<string, { terjadwal: Terjadwal[]; tanpaJam: Order[] }>();
   for (const p of pesanan) {
     const b = map.get(p.tanggal) ?? { terjadwal: [], tanpaJam: [] };
@@ -609,7 +132,7 @@ const PER_HARI = (() => {
   }
   for (const b of map.values()) b.terjadwal.sort((a, c) => a.start - c.start);
   return map;
-})();
+}
 
 // Ikon sesuai jenis paket
 const ikonPaket = (item: string): LucideIcon => {
@@ -621,9 +144,19 @@ const ikonPaket = (item: string): LucideIcon => {
 };
 
 // Warna avatar sama dengan "Pelanggan Tetap" di sidebar
-const warnaPelanggan = (nama: string) =>
+const warnaPelanggan = (nama?: string | null) =>
   favorites.find((f) => f.name === nama)?.color ??
   "bg-neutral-700 text-neutral-200";
+
+// Pesanan yang disimpan tanpa nama tetap tampil rapi, tidak kosong
+const NAMA_KOSONG = "Tanpa nama";
+// customer bisa saja undefined/null kalau API tidak mengirim namanya
+const namaBersih = (p: Order) => (p.customer ?? "").trim();
+const adaNama = (p: Order) => namaBersih(p) !== "";
+const namaTampil = (p: Order) => namaBersih(p) || NAMA_KOSONG;
+/** Huruf pertama untuk avatar ("Bu Rina" → "B", kosong → "?") */
+const inisial = (nama?: string | null) =>
+  (nama ?? "").trim().charAt(0).toUpperCase() || "?";
 
 /* ------------------------------------------------------------------ */
 /* Acara yang jamnya bertabrakan dibagi ke beberapa jalur              */
@@ -670,7 +203,7 @@ function Avatar({
   kecil = false,
   className = "",
 }: {
-  nama: string;
+  nama?: string | null;
   kecil?: boolean;
   className?: string;
 }) {
@@ -680,7 +213,7 @@ function Avatar({
         kecil ? "size-4 text-[9px]" : "size-5 text-[10px]"
       } ${warnaPelanggan(nama)} ${className}`}
     >
-      {nama[0]}
+      {inisial(nama)}
     </span>
   );
 }
@@ -717,11 +250,11 @@ function KartuAcara({
       <span className="flex items-start gap-2">
         {lebar && <Avatar nama={p.customer} className="mt-px" />}
         <span
-          className={`line-clamp-2 text-[13px] font-medium leading-snug text-neutral-100 ${
-            batal ? "line-through" : ""
-          }`}
+          className={`line-clamp-2 text-[13px] font-medium leading-snug ${
+            adaNama(p) ? "text-neutral-100" : "italic text-neutral-400"
+          } ${batal ? "line-through" : ""}`}
         >
-          {p.customer}
+          {namaTampil(p)}
         </span>
       </span>
 
@@ -758,18 +291,61 @@ function KartuAcara({
 /* ------------------------------------------------------------------ */
 
 export default function JadwalAcaraPage() {
-  const [bulan, setBulan] = useState(bulanIniKey);
-  const [selected, setSelected] = useState(todayKey);
+  // Tanggal "hari ini" baru diisi setelah halaman tampil di browser, supaya
+  // tidak beda dengan hasil render server (zona waktu) dan tidak basi.
+  const [hariIni, setHariIni] = useState("");
+  const [bulan, setBulan] = useState("");
+  const [selected, setSelected] = useState("");
+
+  const [pesanan, setPesanan] = useState<Order[]>([]);
+  const [memuat, setMemuat] = useState(true);
+  const [galat, setGalat] = useState<string | null>(null);
+  const [percobaan, setPercobaan] = useState(0);
+
   const [sel, setSel] = useState<Order | null>(null);
   const [nowHour, setNowHour] = useState<number | null>(null);
   const scroller = useRef<HTMLDivElement>(null);
 
-  const hariKeys = hariDalamBulan(bulan);
+  const bulanIni = bulanDari(hariIni);
+  const opsiBulan = hariIni ? daftarBulan(bulanIni) : [];
+  const hariKeys = bulan ? hariDalamBulan(bulan) : [];
   const cols = kolomGrid(hariKeys.length);
+  const perHari = useMemo(() => kelompokkan(pesanan), [pesanan]);
 
   const jumlahAcara = pesanan.filter(
     (p) => p.tanggal.startsWith(bulan) && p.status !== "Batal",
   ).length;
+
+  // Mulai dari hari ini
+  useEffect(() => {
+    const sekarang = toKey(new Date());
+    setHariIni(sekarang);
+    setBulan(bulanDari(sekarang));
+    setSelected(sekarang);
+  }, []);
+
+  // Ambil pesanan dari API setiap kali bulan diganti (atau "Coba lagi")
+  useEffect(() => {
+    if (!bulan) return;
+    const ctrl = new AbortController();
+    setMemuat(true);
+    setGalat(null);
+
+    ambilJadwal(bulan, ctrl.signal)
+      .then((data) => {
+        if (ctrl.signal.aborted) return;
+        setPesanan(data);
+        setMemuat(false);
+      })
+      .catch((e) => {
+        if (ctrl.signal.aborted) return;
+        setPesanan([]);
+        setGalat(e instanceof Error ? e.message : "Gagal memuat jadwal");
+        setMemuat(false);
+      });
+
+    return () => ctrl.abort();
+  }, [bulan, percobaan]);
 
   // Garis "sekarang"
   useEffect(() => {
@@ -782,24 +358,26 @@ export default function JadwalAcaraPage() {
     return () => clearInterval(id);
   }, []);
 
-  // Gulir ke kolom hari terpilih & acara pertamanya saat pindah bulan
+  // Setelah data bulan selesai dimuat: gulir ke kolom hari terpilih &
+  // acara pertamanya
   useEffect(() => {
+    if (memuat || !bulan) return;
     const el = scroller.current;
     if (!el) return;
     const kolom = el.querySelector<HTMLElement>(`[data-day="${selected}"]`);
-    const jadwal = PER_HARI.get(selected)?.terjadwal ?? [];
+    const jadwal = perHari.get(selected)?.terjadwal ?? [];
     const awal = jadwal.length ? jadwal[0].start : START_HOUR + 1;
     el.scrollTo({
       left: Math.max(0, (kolom?.offsetLeft ?? 0) - TIME_COL),
       top: Math.max(0, (awal - START_HOUR - 0.5) * ROW_H),
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bulan]);
+  }, [memuat]);
 
   // Bulan ini → langsung ke hari ini; bulan lain → tanggal 1
   const gantiBulan = (ym: string) => {
     setBulan(ym);
-    setSelected(ym === bulanIniKey ? todayKey : `${ym}-01`);
+    setSelected(ym === bulanIni ? hariIni : `${ym}-01`);
   };
 
   return (
@@ -810,12 +388,14 @@ export default function JadwalAcaraPage() {
             <CalendarDays className="size-4 text-neutral-400" /> Jadwal Acara
           </span>
           <span className={label}>
-            {jumlahAcara} Acara{" "}
-            {bulan === bulanIniKey ? "Bulan Ini" : `di ${namaBulan(bulan)}`}
+            {memuat
+              ? "Memuat…"
+              : `${jumlahAcara} Acara ${
+                  bulan === bulanIni ? "Bulan Ini" : `di ${namaBulan(bulan)}`
+                }`}
           </span>
         </div>
         <div className="flex items-center gap-3">
-         
           <button
             aria-label="Notifikasi"
             className="grid size-9 place-items-center rounded-lg border border-white/10 text-neutral-400 hover:text-white"
@@ -843,7 +423,7 @@ export default function JadwalAcaraPage() {
               onChange={(e) => gantiBulan(e.target.value)}
               className="h-9 cursor-pointer appearance-none rounded-lg border border-white/10 bg-transparent pl-3 pr-9 text-sm text-neutral-200 transition-colors hover:bg-white/5 hover:text-white focus-visible:border-orange-500/60 focus-visible:outline-none [color-scheme:dark]"
             >
-              {DAFTAR_BULAN.map((b) => (
+              {opsiBulan.map((b) => (
                 <option key={b} value={b}>
                   {namaBulan(b)}
                 </option>
@@ -858,7 +438,7 @@ export default function JadwalAcaraPage() {
 
         <div className="h-[70vh] lg:h-[calc(100vh-13.5rem)] lg:min-h-[560px]">
           {/* Kalender bulanan: satu kolom per hari, geser ke samping */}
-          <section className={`${card} h-full overflow-hidden`}>
+          <section className={`${card} relative h-full overflow-hidden`}>
             <div ref={scroller} className="h-full overflow-auto">
               <div
                 className="relative"
@@ -889,7 +469,7 @@ export default function JadwalAcaraPage() {
                         >
                           <span
                             className={`text-2xl font-medium ${
-                              key === todayKey
+                              key === hariIni
                                 ? "text-orange-500"
                                 : "text-neutral-100"
                             }`}
@@ -914,18 +494,28 @@ export default function JadwalAcaraPage() {
                         key={key}
                         className="flex min-h-10 flex-col gap-1 border-l border-white/10 p-1"
                       >
-                        {(PER_HARI.get(key)?.tanpaJam ?? []).map((p) => (
+                        {(perHari.get(key)?.tanpaJam ?? []).map((p) => (
                           <button
                             key={p.id}
                             onClick={() => setSel(p)}
-                            title={`${p.customer} · ${p.item}`}
+                            title={`${namaTampil(p)} · ${p.item}`}
                             className={`flex items-center gap-1.5 rounded-md bg-white/[0.06] px-1.5 py-1 text-left text-[11px] text-neutral-200 transition-colors hover:bg-white/10 ${
                               p.status === "Batal" ? "opacity-50" : ""
                             }`}
                           >
                             <Avatar nama={p.customer} kecil />
                             <span className="truncate">
-                              {p.customer} · {p.item}
+                              <span
+                                className={
+                                  adaNama(p) ? "" : "italic text-neutral-400"
+                                }
+                              >
+                                {namaTampil(p)}
+                              </span>
+                              <span className="text-neutral-500">
+                                {" "}
+                                · {p.item}
+                              </span>
                             </span>
                           </button>
                         ))}
@@ -956,9 +546,9 @@ export default function JadwalAcaraPage() {
                   </div>
 
                   {hariKeys.map((key) => {
-                    const ditata = tataHari(PER_HARI.get(key)?.terjadwal ?? []);
+                    const ditata = tataHari(perHari.get(key)?.terjadwal ?? []);
                     const tampilGaris =
-                      key === todayKey &&
+                      key === hariIni &&
                       nowHour !== null &&
                       nowHour >= START_HOUR &&
                       nowHour <= END_HOUR;
@@ -997,6 +587,26 @@ export default function JadwalAcaraPage() {
                 </div>
               </div>
             </div>
+
+            {/* Status pengambilan data */}
+            {memuat && (
+              <div className="pointer-events-none absolute bottom-4 left-1/2 z-40 flex -translate-x-1/2 items-center gap-2 rounded-full border border-white/10 bg-[#1b1b1b] px-3 py-1.5 text-xs text-neutral-300">
+                <Loader2 className="size-3.5 animate-spin" />
+                Memuat jadwal…
+              </div>
+            )}
+            {galat && !memuat && (
+              <div className="absolute bottom-4 left-1/2 z-40 flex -translate-x-1/2 items-center gap-3 rounded-xl border border-red-500/30 bg-[#1b1b1b] px-4 py-2.5 text-sm text-red-300">
+                <span>{galat}</span>
+                <button
+                  onClick={() => setPercobaan((n) => n + 1)}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 px-2.5 py-1 text-xs text-neutral-200 transition-colors hover:bg-white/5"
+                >
+                  <RefreshCw className="size-3.5" />
+                  Coba lagi
+                </button>
+              </div>
+            )}
           </section>
         </div>
       </div>
