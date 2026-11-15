@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import axios from "axios";
 import {
   Check,
+  Download,
   Eye,
   EyeOff,
   MapPin,
@@ -23,7 +24,7 @@ import {
   type DataRingkasan,
 } from "@/components/RingkasanPesanan";
 import { api } from "@/lib/api";
-import { esList, menuList, rupiah, supList } from "@/data/menu";
+import { menuList, rupiah } from "@/data/menu";
 
 // Daftar paket diambil dari API Laravel (GET /paket).
 // Kalau API belum jalan, dipakai daftar cadangan dari data/menu.ts.
@@ -36,8 +37,6 @@ const formKosong = {
   gps: "",
   jam: "",
   paket: "",
-  sup: "",
-  es: "",
   dataTambahan: "",
   jumlah: "",
   meja: "",
@@ -47,6 +46,9 @@ const formKosong = {
 };
 type Form = typeof formKosong;
 type PaketItem = { id?: number; nama: string; harga: number; isi: string[] };
+
+// Item isi paket berbentuk "Bakso / Sup Kimlo" = pelanggan memilih salah satu
+const opsi = (x: string) => x.split(/\s*\/\s*/).filter(Boolean);
 
 // "25000", "25.000", atau "25000.00" -> 25000
 const angka = (v: string | number) =>
@@ -110,6 +112,8 @@ export default function PesananBaruPage() {
   const [form, setForm] = useState<Form>(formKosong);
   const [bonus, setBonus] = useState<string[]>([]);
   const [bonusInput, setBonusInput] = useState("");
+  // Pilihan pelanggan untuk item "A / B" di isi paket (kunci = urutan item)
+  const [pilihan, setPilihan] = useState<Record<number, string>>({});
   const [preview, setPreview] = useState(true);
   const [msg, setMsg] = useState("");
 
@@ -118,6 +122,7 @@ export default function PesananBaruPage() {
     "memuat",
   );
   const [menyimpan, setMenyimpan] = useState(false);
+  const [mengunduh, setMengunduh] = useState(false);
   // Terisi setelah pesanan berhasil disimpan ke server
   const [tersimpan, setTersimpan] = useState<{
     dbId: number;
@@ -158,6 +163,10 @@ export default function PesananBaruPage() {
 
   const hari = hariDari(form.tanggal);
   const paketMenu = daftarPaket.find((p) => p.nama === form.paket);
+  // "A / B" diganti pilihan pelanggan kalau sudah dipilih
+  const isiTerpilih = (paketMenu?.isi ?? []).map((x, i) =>
+    opsi(x).length > 1 && pilihan[i] ? pilihan[i] : x,
+  );
 
   // Data ringkasan: nilai kosong ditulis "" (di layar tampil "-",
   // di kertas bagian itu disembunyikan)
@@ -176,9 +185,7 @@ export default function PesananBaruPage() {
           ? `${paketMenu.nama} — ${rupiah(paketMenu.harga)} / porsi`
           : form.paket,
       },
-      { label: "Isi Paket", nilai: paketMenu ? paketMenu.isi.join("\n") : "" },
-      { label: "Pilihan Sup", nilai: form.sup },
-      { label: "Pilihan Es", nilai: form.es },
+      { label: "Isi Paket", nilai: isiTerpilih.join("\n") },
       { label: "Data Tambahan", nilai: form.dataTambahan },
     ],
     jumlah: form.jumlah,
@@ -232,10 +239,19 @@ export default function PesananBaruPage() {
                 ? "jumlah pesanan"
                 : "";
     if (kurang) return setMsg(`Isi ${kurang} dulu.`);
+    const belumPilih = paketMenu?.isi.find(
+      (x, i) => opsi(x).length > 1 && !pilihan[i],
+    );
+    if (belumPilih) return setMsg(`Pilih salah satu dulu: ${belumPilih}.`);
     if (!paketMenu || paketMenu.id === undefined)
       return setMsg(
         "Daftar paket belum dari API, pesanan belum bisa disimpan.",
       );
+
+    // Pilihan "A / B" yang dipilih pelanggan (sup & es tetap disimpan di kolom lama)
+    const terpilih = paketMenu.isi.flatMap((x, i) =>
+      opsi(x).length > 1 && pilihan[i] ? [pilihan[i]] : [],
+    );
 
     setMenyimpan(true);
     try {
@@ -247,8 +263,9 @@ export default function PesananBaruPage() {
         gps: form.gps || null,
         jam_acara: form.jam || null,
         id_paket: paketMenu.id,
-        pilihan_sup: form.sup || null,
-        pilihan_es: form.es || null,
+        pilihan_sup:
+          terpilih.find((x) => /bakso|kimlo|sup|soto/i.test(x)) ?? null,
+        pilihan_es: terpilih.find((x) => /^es\b/i.test(x)) ?? null,
         data_tambahan: form.dataTambahan || null,
         jumlah_pesanan: Number(form.jumlah),
         jumlah_meja: form.meja === "" ? null : Number(form.meja),
@@ -270,18 +287,38 @@ export default function PesananBaruPage() {
     }
   };
 
+  // Unduh ringkasan sebagai file PDF (library PDF baru dimuat saat tombol ditekan)
+  const unduhPdf = async () => {
+    if (!form.nama) return setMsg("Isi nama pelanggan dulu.");
+    setMengunduh(true);
+    try {
+      const { unduhPdf: buatPdf } = await import("@/components/RingkasanPdf");
+      await buatPdf(data);
+      setMsg("PDF diunduh.");
+    } catch (err) {
+      console.error("Gagal membuat PDF:", err);
+      setMsg("PDF gagal dibuat. Coba lagi.");
+    } finally {
+      setMengunduh(false);
+    }
+  };
+
   // Kosongkan form untuk pesanan berikutnya
   const pesananBaru = () => {
     setForm(formKosong);
     setBonus([]);
     setBonusInput("");
+    setPilihan({});
     setTersimpan(null);
     setMsg("");
   };
 
   const simpan = () => {
     try {
-      localStorage.setItem("draft-pesanan", JSON.stringify({ form, bonus }));
+      localStorage.setItem(
+        "draft-pesanan",
+        JSON.stringify({ form, bonus, pilihan }),
+      );
       setMsg("Draft tersimpan di browser ini.");
     } catch {
       setMsg("Draft gagal disimpan.");
@@ -294,6 +331,7 @@ export default function PesananBaruPage() {
       const j = JSON.parse(d);
       setForm(j.form);
       setBonus(j.bonus);
+      setPilihan(j.pilihan ?? {});
       setMsg("Draft dimuat.");
     } catch {
       setMsg("Draft gagal dimuat.");
@@ -358,6 +396,14 @@ export default function PesananBaruPage() {
             </button>
             <button onClick={() => window.print()} className={btn}>
               <Printer className="size-4" /> Cetak
+            </button>
+            <button
+              onClick={unduhPdf}
+              disabled={mengunduh}
+              className={`${btn} disabled:opacity-60`}
+            >
+              <Download className="size-4" />{" "}
+              {mengunduh ? "Membuat PDF..." : "Unduh PDF"}
             </button>
             <button onClick={kirim} className={btn}>
               <Send className="size-4" /> Kirim WA
@@ -464,7 +510,14 @@ export default function PesananBaruPage() {
               </p>
               <div className="mt-4 grid gap-4 sm:grid-cols-2">
                 <Field label="Paket" className="sm:col-span-2">
-                  <select className={inp} {...f("paket")}>
+                  <select
+                    className={inp}
+                    {...f("paket")}
+                    onChange={(e) => {
+                      set("paket", e.target.value);
+                      setPilihan({});
+                    }}
+                  >
                     <option value="">
                       {sumberPaket === "memuat"
                         ? "Memuat paket..."
@@ -495,43 +548,49 @@ export default function PesananBaruPage() {
                         punya baris di tabel menu.
                       </p>
                     )}
-                    <ul className="mt-2 grid gap-x-4 gap-y-1 text-sm text-neutral-200 sm:grid-cols-2">
-                      {paketMenu.isi.map((x, i) => (
-                        <li key={`${x}-${i}`} className="flex gap-2">
-                          <span className="text-orange-400">•</span>
-                          {x}
-                        </li>
-                      ))}
+                    <ul className="mt-2 grid gap-x-4 gap-y-2 text-sm text-neutral-200 sm:grid-cols-2">
+                      {paketMenu.isi.map((x, i) => {
+                        const o = opsi(x);
+                        if (o.length < 2)
+                          return (
+                            <li key={`${x}-${i}`} className="flex gap-2">
+                              <span className="text-orange-400">•</span>
+                              {x}
+                            </li>
+                          );
+                        // Item "A / B": pelanggan memilih salah satu langsung di sini
+                        return (
+                          <li
+                            key={`${x}-${i}`}
+                            className="flex flex-wrap items-center gap-2 sm:col-span-2"
+                          >
+                            <span className="text-orange-400">•</span>
+                            <span className="text-neutral-400">Pilih:</span>
+                            {o.map((p) => (
+                              <button
+                                key={p}
+                                type="button"
+                                onClick={() =>
+                                  setPilihan((v) => ({
+                                    ...v,
+                                    [i]: v[i] === p ? "" : p,
+                                  }))
+                                }
+                                className={`rounded-lg border px-3 py-1.5 text-sm transition-colors ${
+                                  pilihan[i] === p
+                                    ? "border-orange-500/60 bg-orange-500/15 text-orange-300"
+                                    : "border-white/10 bg-[#141414] text-neutral-300 hover:bg-white/10"
+                                }`}
+                              >
+                                {p}
+                              </button>
+                            ))}
+                          </li>
+                        );
+                      })}
                     </ul>
                   </div>
                 )}
-                <div className="flex flex-col gap-1.5">
-                  <span className="text-xs text-neutral-400">Pilihan Sup</span>
-                  <div className="grid grid-cols-2 gap-2">
-                    {supList.map((s) => (
-                      <button
-                        key={s}
-                        type="button"
-                        onClick={() => set("sup", form.sup === s ? "" : s)}
-                        className={`rounded-lg border px-3 py-2.5 text-sm transition-colors ${
-                          form.sup === s
-                            ? "border-orange-500/60 bg-orange-500/15 text-orange-300"
-                            : "border-white/10 bg-[#1c1c1c] text-neutral-300 hover:bg-white/10"
-                        }`}
-                      >
-                        {s}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <Field label="Pilihan Es">
-                  <select className={inp} {...f("es")}>
-                    <option value="">Pilih es</option>
-                    {esList.map((e) => (
-                      <option key={e}>{e}</option>
-                    ))}
-                  </select>
-                </Field>
                 <Field label="Data Tambahan" className="sm:col-span-2">
                   <input className={inp} {...f("dataTambahan")} />
                 </Field>

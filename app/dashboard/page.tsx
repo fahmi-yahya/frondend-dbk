@@ -464,9 +464,7 @@ export default function DashboardPage() {
                   {cur.value} pesanan · menampilkan {orders.length}
                 </p>
               </div>
-              <span className="rounded-md bg-orange-500/15 px-2 py-1 font-mono text-xs text-orange-400">
-                Pendapatan {rpJt(cur.income)}
-              </span>
+              
             </div>
 
             {orders.length === 0 ? (
@@ -551,7 +549,7 @@ export default function DashboardPage() {
                     <tr className="bg-white/5 text-left text-[11px] uppercase text-neutral-400">
                       {[
                         "Menu",
-                        "Pendapatan",
+                       
                         "Pesanan",
                         "Pertumbuhan",
                         "Porsi",
@@ -569,7 +567,7 @@ export default function DashboardPage() {
                     {menuTampil.map((p) => (
                       <tr key={p.name}>
                         <td className="px-3 py-3">{p.name}</td>
-                        <td className="px-3 py-3 font-mono">{p.income}</td>
+                     
                         <td className="px-3 py-3 font-mono">{p.orders}</td>
                         <td className="px-3 py-3">
                           <span

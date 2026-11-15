@@ -59,7 +59,7 @@ export const tanggalLengkap = (iso: string) =>
   iso ? `${hariDari(iso)}, ${tanggalPanjang(iso)}` : "";
 
 /* ------------------------------------------------------------------ */
-/* Ringkasan pesanan                                                   */
+/* Data ringkasan                                                      */
 /* ------------------------------------------------------------------ */
 
 export type Pasang = { label: string; nilai: string };
@@ -78,31 +78,95 @@ export type DataRingkasan = {
   keterangan: string;
 };
 
+/* ------------------------------------------------------------------ */
+/* Susunan bagian (dipakai bersama oleh preview, cetak, dan file PDF,   */
+/* supaya isi ketiganya selalu sama)                                    */
+/* ------------------------------------------------------------------ */
+
+export type Baris = {
+  label: string;
+  nilai: string;
+  // isi : daftar hidangan (dipisah baris baru), tampil berkolom
+  // peta: link Google Maps
+  // sorot: baris penting (jumlah pesanan)
+  tipe?: "isi" | "peta" | "sorot";
+};
+export type Bagian = {
+  judul: string;
+  baris: Baris[];
+  catatan?: string; // hanya untuk bagian "Catatan"
+  penutup?: boolean; // true = bagian "Catatan"
+};
+
+export const KALIMAT_PENUTUP =
+  "Terima kasih atas pesanan Anda! Kami siap melayani acara Anda.";
+
+/**
+ * sembunyikanKosong = true: baris dan bagian yang kosong dibuang
+ * (cetak / PDF / detail pesanan). false: baris kosong tampil "-"
+ * (form pesanan baru).
+ */
+export function bagianDari(
+  d: DataRingkasan,
+  sembunyikanKosong: boolean,
+): Bagian[] {
+  const peta = d.gps.startsWith("http") ? d.gps : "";
+  const pilih = (daftar: Baris[]) =>
+    daftar.filter((b) => !sembunyikanKosong || b.nilai !== "");
+
+  const semua: Bagian[] = [
+    {
+      judul: "Pemesan",
+      baris: [
+        { label: "Nama", nilai: d.nama },
+        { label: "No. HP", nilai: d.hp },
+      ],
+    },
+    {
+      judul: "Acara",
+      baris: [
+        { label: "Hari / Tanggal", nilai: d.tanggal },
+        { label: "Jam Acara", nilai: d.jam },
+        { label: "Lokasi", nilai: d.lokasi },
+        { label: "Peta", nilai: peta, tipe: "peta" },
+      ],
+    },
+    {
+      judul: "Menu Pesanan",
+      baris: d.menu.map((m) => ({
+        label: m.label,
+        nilai: m.nilai,
+        tipe: m.label === "Isi Paket" ? ("isi" as const) : undefined,
+      })),
+    },
+    {
+      judul: "Kebutuhan Acara",
+      baris: [
+        { label: "Jumlah Pesanan", nilai: d.jumlah, tipe: "sorot" },
+        ...d.kebutuhan,
+        { label: "Bonus", nilai: d.bonus.join(", ") },
+      ],
+    },
+  ];
+
+  return [
+    ...semua
+      .map((b) => ({ ...b, baris: pilih(b.baris) }))
+      .filter((b) => b.baris.length > 0),
+    { judul: "Catatan", baris: [], catatan: d.keterangan, penutup: true },
+  ];
+}
+
+/* ------------------------------------------------------------------ */
+/* Ringkasan pesanan (tampilan layar)                                   */
+/* ------------------------------------------------------------------ */
+
 // Tanda "-" untuk data yang belum diisi (hanya tampil di layar)
 const strip = <span className="text-neutral-300">-</span>;
-const nilai = (v: string) => (v ? v : strip);
-
-// Label kecil abu-abu di atas, nilai di bawahnya
-function Rincian({
-  label,
-  children,
-  kanan = false,
-}: {
-  label: string;
-  children: React.ReactNode;
-  kanan?: boolean;
-}) {
-  return (
-    <div className={kanan ? "text-right" : ""}>
-      <p className="text-xs text-neutral-500">{label}</p>
-      <p className="mt-1 break-words">{children}</p>
-    </div>
-  );
-}
 
 /**
  * cetak            : versi kertas (bagian kosong disembunyikan, link peta
- *                    ditulis lengkap)
+ *                    ditulis lengkap, jarak dirapatkan)
  * sembunyikanKosong: sembunyikan bagian kosong tapi tetap tampil di layar
  *                    (cocok untuk detail pesanan yang sudah tersimpan)
  * Tanpa keduanya, bagian kosong tampil "-" (cocok untuk form pesanan baru).
@@ -117,151 +181,122 @@ export function RingkasanPesanan({
   sembunyikanKosong?: boolean;
 }) {
   const sembunyi = cetak || sembunyikanKosong;
-  const ada = (v: string) => !sembunyi || v !== "";
-
-  const peta = d.gps.startsWith("http") ? d.gps : "";
-  const bonus = d.bonus.join(", ");
-  const menu = d.menu.filter((m) => ada(m.nilai));
-  const kebutuhan = d.kebutuhan.filter((k) => ada(k.nilai));
-  const adaKotak = kebutuhan.length > 0 || ada(d.jumlah);
-  const adaKiri = ada(d.lokasi) || ada(peta) || ada(bonus);
+  const bagian = bagianDari(d, sembunyi);
+  const py = cetak ? "py-1.5" : "py-2";
 
   return (
     <article className="text-sm leading-relaxed text-neutral-900">
-      {/* Logo */}
-      <img
-        src="/logo-dbk.png"
-        alt="DBK Catering Service"
-        loading="eager"
-        className="h-14 w-auto"
-      />
-
-      {/* Info utama */}
-      <div className="mt-6 flex flex-wrap justify-between gap-x-6 gap-y-3">
-        {ada(d.tanggal) && (
-          <Rincian label="Hari / Tanggal">{nilai(d.tanggal)}</Rincian>
-        )}
-        {ada(d.jam) && <Rincian label="Jam Acara">{nilai(d.jam)}</Rincian>}
-        <Rincian label="No. Pesanan" kanan>
-          <span className="font-mono">{d.noPesanan}</span>
-        </Rincian>
-      </div>
-
-      {/* Dari */}
-      <div className="mt-6">
-        <p className="text-xs text-neutral-500">Dari:</p>
-        <p className="mt-1.5 text-base font-medium">{usaha.nama}</p>
-        <p className="text-xs text-neutral-500">{usaha.alamat}</p>
-      </div>
-
-      {/* Untuk */}
-      {(ada(d.nama) || ada(d.hp)) && (
-        <div className="mt-5">
-          <p className="text-xs text-neutral-500">Untuk:</p>
-          <p className="mt-1.5 break-words text-base font-medium">
-            {nilai(d.nama)}
+      {/* Kepala: logo + nomor pesanan */}
+      <header className="flex items-start justify-between gap-4">
+        <img
+          src="/logo-dbk.png"
+          alt="DBK Catering Service"
+          loading="eager"
+          className="h-14 w-auto"
+        />
+        <div className="text-right">
+          <p className="text-[11px] font-semibold uppercase tracking-widest text-neutral-500">
+            Ringkasan Pesanan
           </p>
-          {ada(d.hp) && (
-            <p className="text-xs text-neutral-500">{d.hp || "-"}</p>
-          )}
+          <p className="mt-1 inline-block rounded-md border border-neutral-300 px-2.5 py-1 font-mono text-sm">
+            {d.noPesanan}
+          </p>
         </div>
-      )}
+      </header>
 
-      {/* Tabel menu */}
-      {menu.length > 0 && (
-        <table className="mt-6 w-full table-fixed border-collapse">
-          <thead>
-            <tr>
-              <th className="w-2/5 rounded-l-lg bg-neutral-50 px-3 py-2.5 text-left font-normal text-neutral-600">
-                Item
-              </th>
-              <th className="rounded-r-lg bg-neutral-50 px-3 py-2.5 text-left font-normal text-neutral-600">
-                Pilihan
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {menu.map((m) => (
-              <tr key={m.label} className="break-inside-avoid">
-                <td className="border-b border-neutral-100 px-3 py-3 align-top text-neutral-600">
-                  {m.label}
-                </td>
-                <td className="whitespace-pre-line break-words border-b border-neutral-100 px-3 py-3 align-top">
-                  {nilai(m.nilai)}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
+      {/* Bagian-bagian berbingkai, diberi nomor supaya mudah dibaca urut */}
+      <div className={`${cetak ? "mt-4 space-y-2.5" : "mt-5 space-y-3"}`}>
+        {bagian.map((b, i) => (
+          <section
+            key={b.judul}
+            className="break-inside-avoid overflow-hidden rounded-lg border border-neutral-300"
+          >
+            <h3 className="flex items-center gap-2 border-b border-neutral-300 bg-neutral-100 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-neutral-700">
+              <span className="grid size-5 place-items-center rounded-full bg-neutral-900 text-[11px] font-semibold leading-none text-white">
+                {i + 1}
+              </span>
+              {b.judul}
+            </h3>
 
-      {/* Lokasi & kebutuhan acara */}
-      {(adaKiri || adaKotak) && (
-        <div className="mt-6 grid grid-cols-2 items-start gap-6 break-inside-avoid">
-          <div className="min-w-0 space-y-4">
-            {ada(d.lokasi) && (
-              <Rincian label="Lokasi Acara">{nilai(d.lokasi)}</Rincian>
-            )}
-            {ada(peta) && (
-              <Rincian label="Peta">
-                {peta ? (
-                  cetak ? (
-                    <span className="break-all">{peta}</span>
-                  ) : (
-                    <a
-                      href={peta}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-orange-600 underline"
-                    >
-                      Buka peta
-                    </a>
-                  )
+            {b.penutup ? (
+              <div className={`px-3 ${py}`}>
+                {b.catatan ? (
+                  <p className="whitespace-pre-line break-words">{b.catatan}</p>
                 ) : (
-                  strip
+                  !sembunyi && <p>{strip}</p>
                 )}
-              </Rincian>
-            )}
-            {ada(bonus) && <Rincian label="Bonus">{nilai(bonus)}</Rincian>}
-          </div>
-
-          {adaKotak && (
-            <div className="col-start-2 overflow-hidden rounded-xl border border-neutral-200">
-              {kebutuhan.map((k) => (
-                <div
-                  key={k.label}
-                  className="flex justify-between gap-3 px-4 py-2.5"
+                <p
+                  className={`text-neutral-600 ${b.catatan || !sembunyi ? "mt-1.5" : ""}`}
                 >
-                  <span className="text-neutral-500">{k.label}</span>
-                  <span className="min-w-0 break-words text-right">
-                    {nilai(k.nilai)}
-                  </span>
-                </div>
-              ))}
-              {ada(d.jumlah) && (
-                <div className="flex justify-between gap-3 bg-neutral-50 px-4 py-3 font-medium">
-                  <span>Jumlah Pesanan</span>
-                  <span className="min-w-0 break-words text-right">
-                    {nilai(d.jumlah)}
-                  </span>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Catatan */}
-      <div className="mt-6">
-        <p className="text-xs text-neutral-500">Catatan</p>
-        {ada(d.keterangan) && (
-          <p className="mt-1 whitespace-pre-line break-words">
-            {nilai(d.keterangan)}
-          </p>
-        )}
-        <p className="mt-2 text-neutral-600">
-          Terima kasih atas pesanan Anda! Kami siap melayani acara Anda.
-        </p>
+                  {KALIMAT_PENUTUP}
+                </p>
+              </div>
+            ) : (
+              <div className="divide-y divide-neutral-200">
+                {b.baris.map((r) =>
+                  r.tipe === "isi" ? (
+                    <div key={r.label} className={`px-3 ${py}`}>
+                      <p className="text-xs text-neutral-500">{r.label}</p>
+                      {r.nilai ? (
+                        <ul
+                          className={`mt-1.5 gap-x-6 ${cetak ? "columns-3" : "columns-2"}`}
+                        >
+                          {r.nilai
+                            .split("\n")
+                            .filter(Boolean)
+                            .map((x, j) => (
+                              <li
+                                key={`${x}-${j}`}
+                                className="flex break-inside-avoid gap-2 break-words"
+                              >
+                                <span className="text-neutral-400">•</span>
+                                {x}
+                              </li>
+                            ))}
+                        </ul>
+                      ) : (
+                        <p className="mt-1">{strip}</p>
+                      )}
+                    </div>
+                  ) : (
+                    <div
+                      key={r.label}
+                      className={`grid grid-cols-[36%_1fr] gap-3 px-3 ${py} ${
+                        r.tipe === "sorot" ? "bg-neutral-50" : ""
+                      }`}
+                    >
+                      <p className="text-neutral-500">{r.label}</p>
+                      <p
+                        className={`min-w-0 whitespace-pre-line break-words ${
+                          r.tipe === "sorot" ? "font-semibold" : ""
+                        }`}
+                      >
+                        {!r.nilai ? (
+                          strip
+                        ) : r.tipe === "peta" ? (
+                          cetak ? (
+                            <span className="break-all">{r.nilai}</span>
+                          ) : (
+                            <a
+                              href={r.nilai}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-orange-600 underline"
+                            >
+                              Buka peta
+                            </a>
+                          )
+                        ) : (
+                          r.nilai
+                        )}
+                      </p>
+                    </div>
+                  ),
+                )}
+              </div>
+            )}
+          </section>
+        ))}
       </div>
     </article>
   );
@@ -278,7 +313,8 @@ export function RingkasanPesanan({
 const subscribeKosong = () => () => {};
 
 // Saat mencetak: sembunyikan semua elemen kecuali #area-cetak, kertas A4.
-// print-color-adjust supaya kotak gelap (logo) & latar abu-abu ikut tercetak.
+// print-color-adjust supaya latar abu-abu ikut tercetak.
+// Teks dirapatkan sedikit supaya ringkasan muat satu lembar.
 const cssCetak = `
 @page { size: A4; margin: 14mm; }
 @media print {
@@ -288,6 +324,7 @@ const cssCetak = `
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
   }
+  #area-cetak article { font-size: 12px; line-height: 1.45; }
 }
 `;
 
