@@ -1,83 +1,26 @@
 import axios from "axios";
-import { o, type Order } from "@/components/DetailPesanan";
+import type { Order } from "@/components/DetailPesanan";
 import { api } from "@/lib/api";
 
 /**
- * Bentuk satu item dari PesananResource.
+ * GET /api/jadwal?bulan=2026-10
  *
- * Nama field di bawah ini tebakan. Samakan dengan toArray() di
- * PesananResource kamu. Yang perlu diubah cukup tipe ini dan fungsi
- * dariApi() di bawah; halaman jadwal tidak perlu disentuh.
+ * JadwalController mengembalikan PesananResource::collection(), resource yang
+ * sama dengan GET /pesanan (Dashboard). Bentuknya sudah sama dengan tipe
+ * Order (id, customer, item, tanggal, lokasi, amount, status, extra), jadi
+ * TIDAK dipetakan ulang di sini. Field apa pun yang ditambahkan di
+ * PesananResource otomatis ikut sampai ke jadwal dan Ringkasan Pesanan.
  */
-type PesananApi = {
-  id: number | string;
-  kode?: string | null; // contoh "#K001"; kalau kosong dipakai "#<id>"
-  pelanggan: string;
-  item: string; // contoh "Nasi Box ×80"
-  tanggal: string; // "2026-10-30"
-  jam_acara?: string | null; // "10:00:00", "10:00", atau null
-  total: number | string;
-  status: string; // Lunas | DP | Batal
-  lokasi: string;
-  hp?: string | null;
-  gps?: string | null;
-  sup?: string | null;
-  es?: string | null;
-  meja?: number | string | null;
-  taplak?: string | null;
-  waiters?: number | string | null;
-  bonus?: string[] | null;
-  keterangan?: string | null;
-};
 
-type Extra = NonNullable<Parameters<typeof o>[7]>;
+// Hanya merapikan tipe data. Tidak ada field yang diganti nama atau dibuang.
+const rapikan = (r: Order): Order => ({
+  ...r,
+  tanggal: String(r.tanggal).slice(0, 10), // jaga-jaga kalau berupa ISO datetime
+  amount: Number(r.amount) || 0, // decimal dari Laravel sering berupa string
+  // PHP mengirim array kosong sebagai [] (bukan {}), jadi disamakan
+  extra: r.extra && !Array.isArray(r.extra) ? r.extra : {},
+});
 
-const STATUS: Record<string, string> = {
-  lunas: "Lunas",
-  dp: "DP",
-  batal: "Batal",
-};
-
-// "10:00:00" / "10:00" / "10.00" -> "10.00 WIB". Kosong -> undefined,
-// sehingga acara masuk ke baris "Tanpa Jam".
-function formatJam(jam?: string | null) {
-  const m = jam?.match(/^(\d{1,2})[.:](\d{2})/);
-  return m ? `${m[1].padStart(2, "0")}.${m[2]} WIB` : undefined;
-}
-
-const teks = (v: string | number | null | undefined) =>
-  v === null || v === undefined || v === "" ? undefined : String(v);
-
-function dariApi(r: PesananApi): Order {
-  const extra: Record<string, unknown> = {
-    hp: teks(r.hp),
-    jam: formatJam(r.jam_acara),
-    gps: teks(r.gps),
-    sup: teks(r.sup),
-    es: teks(r.es),
-    meja: teks(r.meja),
-    taplak: teks(r.taplak),
-    waiters: teks(r.waiters),
-    bonus: r.bonus?.length ? r.bonus : undefined,
-    keterangan: teks(r.keterangan),
-  };
-  for (const k of Object.keys(extra)) {
-    if (extra[k] === undefined) delete extra[k];
-  }
-
-  return o(
-    r.kode ?? `#${r.id}`,
-    r.pelanggan,
-    r.item,
-    r.tanggal.slice(0, 10), // jaga-jaga kalau API mengirim ISO datetime
-    Number(r.total), // decimal dari Laravel sering berupa string
-    (STATUS[r.status.toLowerCase()] ?? r.status) as Order["status"],
-    r.lokasi,
-    extra as Extra,
-  );
-}
-
-/** GET /api/jadwal?bulan=2026-10 */
 export async function ambilJadwal(
   bulan: string,
   signal?: AbortSignal,
@@ -88,8 +31,8 @@ export async function ambilJadwal(
     const { data } = await api.get("/jadwal", { params: { bulan }, signal });
 
     // PesananResource::collection() membungkus hasil dalam { data: [...] }
-    const daftar: PesananApi[] = Array.isArray(data) ? data : (data.data ?? []);
-    return daftar.map(dariApi);
+    const daftar: Order[] = Array.isArray(data) ? data : (data.data ?? []);
+    return daftar.map(rapikan);
   } catch (e) {
     if (axios.isCancel(e)) throw e; // dibatalkan karena ganti bulan
 

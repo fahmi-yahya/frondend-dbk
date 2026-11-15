@@ -4,11 +4,13 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import AppShell, { favorites } from "@/components/AppShell";
 import {
   DetailPesanan,
+  namaPemesan,
   statusStyle,
   type Order,
 } from "@/components/DetailPesanan";
 import { hariDari, tanggalSingkat } from "@/components/RingkasanPesanan";
-import { ambilJadwal } from "@/lib/jadwal";
+import axios from "axios";
+import { api } from "@/lib/api";
 import {
   Bell,
   CalendarDays,
@@ -26,9 +28,11 @@ import {
 /* ------------------------------------------------------------------ */
 /* Data pesanan                                                        */
 /*                                                                     */
-/* Diambil dari GET /api/jadwal?bulan=YYYY-MM lewat ambilJadwal()      */
-/* (lihat lib/jadwal.ts). Setiap kali bulan diganti, data bulan itu    */
-/* diambil ulang.                                                      */
+/* Diambil dari GET /api/jadwal?bulan=YYYY-MM (lihat ambilJadwal di    */
+/* bawah). Isinya PesananResource yang sama dengan Dashboard, jadi     */
+/* lengkap: nama, HP, jam, GPS, menu, dst. Setiap kali bulan diganti,  */
+/* data bulan itu diambil ulang. Halaman ini tidak memakai             */
+/* lib/jadwal.ts lagi.                                                 */
 /*                                                                     */
 /* Pesanan yang punya extra.jam tampil di grid jam. Yang belum punya   */
 /* jam tampil di baris "Tanpa Jam" di bawah header hari.               */
@@ -110,12 +114,59 @@ const daftarBulan = (tengah: string) =>
   Array.from({ length: 25 }, (_, i) => geserBulan(tengah, i - 12));
 
 /* ------------------------------------------------------------------ */
+/* Ambil pesanan satu bulan                                            */
+/* ------------------------------------------------------------------ */
+
+// Data dari server dipakai apa adanya (bentuknya sudah sama dengan Order);
+// di sini hanya tipe datanya dirapikan.
+const rapikan = (r: Order): Order => ({
+  ...r,
+  tanggal: String(r.tanggal).slice(0, 10),
+  amount: Number(r.amount) || 0,
+  // PHP mengirim array kosong sebagai [] (bukan {})
+  extra: r.extra && !Array.isArray(r.extra) ? r.extra : {},
+});
+
+async function ambilJadwal(
+  bulan: string,
+  signal: AbortSignal,
+): Promise<Order[]> {
+  try {
+    const { data } = await api.get("/jadwal", { params: { bulan }, signal });
+    const daftar: Order[] = Array.isArray(data) ? data : (data?.data ?? []);
+    return daftar.map(rapikan);
+  } catch (e) {
+    if (axios.isCancel(e)) throw e; // dibatalkan karena ganti bulan
+
+    if (axios.isAxiosError(e)) {
+      const url = api.getUri(e.config);
+      if (!e.response) {
+        if (e.code === "ECONNABORTED" || e.code === "ETIMEDOUT") {
+          throw new Error(`Server terlalu lama merespons (${url})`);
+        }
+        throw new Error(
+          `Tidak bisa terhubung ke ${url} [${e.code ?? "tanpa respons"}]. ` +
+            "Server mati, alamat salah, atau diblokir CORS.",
+        );
+      }
+      const pesan = e.response.data?.message;
+      throw new Error(
+        `Gagal memuat jadwal (${e.response.status})${
+          typeof pesan === "string" && pesan ? `: ${pesan.slice(0, 200)}` : ""
+        }`,
+      );
+    }
+    throw e;
+  }
+}
+
+/* ------------------------------------------------------------------ */
 /* Pesanan → acara                                                     */
 /* ------------------------------------------------------------------ */
 
 // "10.00 WIB" → 10, "16.30 WIB" → 16.5, kosong → null
 const jamMulai = (p: Order): number | null => {
-  const m = p.extra.jam?.match(/(\d{1,2})[.:](\d{2})/);
+  const m = p.extra?.jam?.match(/(\d{1,2})[.:](\d{2})/);
   return m ? Number(m[1]) + Number(m[2]) / 60 : null;
 };
 
@@ -150,8 +201,9 @@ const warnaPelanggan = (nama?: string | null) =>
 
 // Pesanan yang disimpan tanpa nama tetap tampil rapi, tidak kosong
 const NAMA_KOSONG = "Tanpa nama";
-// customer bisa saja undefined/null kalau API tidak mengirim namanya
-const namaBersih = (p: Order) => (p.customer ?? "").trim();
+// Nama dibaca lewat namaPemesan() (DetailPesanan.tsx): ia mencoba beberapa
+// kemungkinan nama field dari API, jadi nama tetap tampil walau bukan "customer"
+const namaBersih = (p: Order) => namaPemesan(p);
 const adaNama = (p: Order) => namaBersih(p) !== "";
 const namaTampil = (p: Order) => namaBersih(p) || NAMA_KOSONG;
 /** Huruf pertama untuk avatar ("Bu Rina" → "B", kosong → "?") */
@@ -248,7 +300,7 @@ function KartuAcara({
       }}
     >
       <span className="flex items-start gap-2">
-        {lebar && <Avatar nama={p.customer} className="mt-px" />}
+        {lebar && <Avatar nama={namaBersih(p)} className="mt-px" />}
         <span
           className={`line-clamp-2 text-[13px] font-medium leading-snug ${
             adaNama(p) ? "text-neutral-100" : "italic text-neutral-400"
@@ -260,7 +312,7 @@ function KartuAcara({
 
       <span className="flex flex-wrap items-center justify-between gap-1">
         <span className="font-mono text-[11px] text-neutral-400">
-          {p.extra.jam}
+          {p.extra?.jam}
         </span>
         <span
           className={`rounded-md px-1.5 py-0.5 font-mono text-[10px] ${statusStyle[p.status]}`}
@@ -503,7 +555,7 @@ export default function JadwalAcaraPage() {
                               p.status === "Batal" ? "opacity-50" : ""
                             }`}
                           >
-                            <Avatar nama={p.customer} kecil />
+                            <Avatar nama={namaBersih(p)} kecil />
                             <span className="truncate">
                               <span
                                 className={

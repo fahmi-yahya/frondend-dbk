@@ -7,6 +7,7 @@ import {
   Download,
   Eye,
   EyeOff,
+  Loader2,
   MapPin,
   Plus,
   Printer,
@@ -84,6 +85,27 @@ const pesanError = (err: unknown) => {
   return "Terjadi kesalahan.";
 };
 
+// Isian GPS boleh diketik / ditempel, lalu diubah jadi link Google Maps supaya
+// tampil di ringkasan, cetak, PDF, dan detail pesanan:
+//  "-8.1724, 113.6995"           -> https://www.google.com/maps?q=-8.1724,113.6995
+//  "maps.app.goo.gl/abc"         -> https://maps.app.goo.gl/abc
+//  "https://maps.google.com/..." -> dipakai apa adanya
+const gpsKeLink = (v: string) => {
+  const t = v.trim();
+  if (!t) return "";
+  const k = t.match(/^(-?\d{1,3}(?:\.\d+)?)\s*[,;\s]\s*(-?\d{1,3}(?:\.\d+)?)$/);
+  if (k && Math.abs(Number(k[1])) <= 90 && Math.abs(Number(k[2])) <= 180)
+    return `https://www.google.com/maps?q=${k[1]},${k[2]}`;
+  if (/^https?:\/\//i.test(t)) return t;
+  if (
+    /^(www\.)?(google\.[a-z.]+\/maps|maps\.google\.|maps\.app\.goo\.gl|goo\.gl\/maps)/i.test(
+      t,
+    )
+  )
+    return `https://${t}`;
+  return t;
+};
+
 const card = "rounded-2xl border border-white/10 bg-[#141414] p-5";
 const inp =
   "w-full rounded-lg border border-white/10 bg-[#1c1c1c] px-3 py-2.5 text-sm [color-scheme:dark] placeholder:text-neutral-600 focus:border-orange-500/60 focus:outline-none";
@@ -122,10 +144,11 @@ export default function PesananBaruPage() {
   );
   const [menyimpan, setMenyimpan] = useState(false);
   const [mengunduh, setMengunduh] = useState(false);
-  // Terisi setelah pesanan berhasil disimpan ke server
-  const [tersimpan, setTersimpan] = useState<{
-    dbId: number;
-    no: string;
+  // Proses ambil lokasi GPS + pesan hasilnya (tampil tepat di bawah isian GPS)
+  const [mencariGps, setMencariGps] = useState(false);
+  const [gpsInfo, setGpsInfo] = useState<{
+    galat: boolean;
+    teks: string;
   } | null>(null);
 
   // Ambil paket + isi menunya dari API
@@ -161,6 +184,8 @@ export default function PesananBaruPage() {
   });
 
   const hari = hariDari(form.tanggal);
+  const gpsLink = gpsKeLink(form.gps);
+  const gpsAdaLink = gpsLink.startsWith("http");
   const paketMenu = daftarPaket.find((p) => p.nama === form.paket);
   // "A / B" diganti pilihan pelanggan kalau sudah dipilih
   const isiTerpilih = (paketMenu?.isi ?? []).map((x, i) =>
@@ -170,13 +195,13 @@ export default function PesananBaruPage() {
   // Data ringkasan: nilai kosong ditulis "" (di layar tampil "-",
   // di kertas bagian itu disembunyikan)
   const data: DataRingkasan = {
-    noPesanan: tersimpan?.no ?? "Baru",
+    noPesanan: "Baru",
     tanggal: tanggalLengkap(form.tanggal),
     jam: form.jam,
     nama: form.nama,
     hp: form.hp,
     lokasi: form.lokasi,
-    gps: form.gps,
+    gps: gpsLink,
     menu: [
       {
         label: "Paket",
@@ -204,24 +229,49 @@ export default function PesananBaruPage() {
   };
 
   const ambilGps = () => {
-    if (!navigator.geolocation)
-      return setMsg("Browser ini tidak mendukung GPS.");
+    const manual = "Ketik koordinat atau tempel link Google Maps.";
+    if (!("geolocation" in navigator))
+      return setGpsInfo({
+        galat: true,
+        teks: `Browser ini tidak mendukung GPS. ${manual}`,
+      });
+    // Browser hanya memberi lokasi di halaman https:// atau localhost
+    if (!window.isSecureContext)
+      return setGpsInfo({
+        galat: true,
+        teks: `GPS hanya jalan di https:// atau localhost. ${manual}`,
+      });
+
+    setMencariGps(true);
+    setGpsInfo(null);
     navigator.geolocation.getCurrentPosition(
       (p) => {
+        const { latitude, longitude } = p.coords;
         set(
           "gps",
-          `https://www.google.com/maps?q=${p.coords.latitude},${p.coords.longitude}`,
+          `https://www.google.com/maps?q=${latitude.toFixed(6)},${longitude.toFixed(6)}`,
         );
-        setMsg("Lokasi GPS terisi.");
+        setGpsInfo({ galat: false, teks: "Lokasi GPS terisi." });
+        setMencariGps(false);
       },
-      () =>
-        setMsg(
-          "Gagal mengambil lokasi. Izinkan akses lokasi, atau tempel link Google Maps.",
-        ),
+      (e) => {
+        setGpsInfo({
+          galat: true,
+          teks:
+            e.code === e.PERMISSION_DENIED
+              ? `Akses lokasi ditolak. Izinkan lokasi di browser, atau ${manual.toLowerCase()}`
+              : e.code === e.TIMEOUT
+                ? `Mencari lokasi terlalu lama. Coba lagi, atau ${manual.toLowerCase()}`
+                : `Lokasi tidak tersedia. ${manual}`,
+        });
+        setMencariGps(false);
+      },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 },
     );
   };
 
-  // Simpan pesanan ke server (baru: POST, sudah tersimpan: PUT)
+  // Simpan pesanan ke server. Kalau berhasil, form langsung dikosongkan
+  // supaya siap dipakai untuk pesanan berikutnya.
   const simpanPesanan = async () => {
     const kurang = !form.tanggal
       ? "tanggal"
@@ -258,7 +308,7 @@ export default function PesananBaruPage() {
         nama: form.nama,
         hp: form.hp,
         lokasi: form.lokasi,
-        gps: form.gps || null,
+        gps: gpsLink || null,
         jam_acara: form.jam || null,
         id_paket: paketMenu.id,
         pilihan_sup:
@@ -271,12 +321,14 @@ export default function PesananBaruPage() {
         bonus,
         keterangan: form.keterangan || null,
       };
-      const res = tersimpan
-        ? await api.put(`/pesanan/${tersimpan.dbId}`, payload)
-        : await api.post("/pesanan", payload);
+      const res = await api.post("/pesanan", payload);
       const p = res.data?.data ?? res.data;
-      setTersimpan({ dbId: p.db_id, no: p.id });
-      setMsg(`Pesanan ${p.id} tersimpan.`);
+      kosongkanForm();
+      setMsg(
+        p?.id
+          ? `Pesanan ${p.id} tersimpan. Form sudah dikosongkan.`
+          : "Pesanan tersimpan. Form sudah dikosongkan.",
+      );
     } catch (err) {
       setMsg(pesanError(err));
     } finally {
@@ -301,13 +353,12 @@ export default function PesananBaruPage() {
   };
 
   // Kosongkan form untuk pesanan berikutnya
-  const pesananBaru = () => {
+  const kosongkanForm = () => {
     setForm(formKosong);
     setBonus([]);
     setBonusInput("");
     setPilihan({});
-    setTersimpan(null);
-    setMsg("");
+    setGpsInfo(null);
   };
 
   const simpan = () => {
@@ -411,11 +462,7 @@ export default function PesananBaruPage() {
               className="flex items-center gap-2 rounded-lg bg-white px-4 py-2 text-sm font-medium text-black hover:bg-neutral-200 disabled:opacity-60"
             >
               <Check className="size-4" />
-              {menyimpan
-                ? "Menyimpan..."
-                : tersimpan
-                  ? "Perbarui Pesanan"
-                  : "Simpan Pesanan"}
+              {menyimpan ? "Menyimpan..." : "Simpan Pesanan"}
             </button>
           </div>
         </div>
@@ -424,17 +471,6 @@ export default function PesananBaruPage() {
           <button onClick={muat} className="underline hover:text-neutral-300">
             Muat draft
           </button>
-          {tersimpan && (
-            <>
-              {" · "}
-              <button
-                onClick={pesananBaru}
-                className="underline hover:text-neutral-300"
-              >
-                Buat pesanan baru
-              </button>
-            </>
-          )}
         </p>
 
         <div
@@ -473,23 +509,65 @@ export default function PesananBaruPage() {
                 <Field label="Lokasi" className="sm:col-span-2">
                   <input className={inp} {...f("lokasi")} />
                 </Field>
-                <Field label="GPS" className="sm:col-span-2">
+                <div className="flex flex-col gap-1.5 sm:col-span-2">
+                  <label htmlFor="gps" className="text-xs text-neutral-400">
+                    GPS
+                  </label>
                   <div className="relative">
                     <input
+                      id="gps"
+                      autoComplete="off"
                       className={`${inp} pr-11`}
-                      placeholder="Tempel link Google Maps, atau tekan ikon pin"
-                      {...f("gps")}
+                      placeholder="Ketik koordinat / tempel link Google Maps, atau tekan ikon pin"
+                      value={form.gps}
+                      onChange={(e) => {
+                        set("gps", e.target.value);
+                        setGpsInfo(null);
+                      }}
                     />
                     <button
                       type="button"
                       onClick={ambilGps}
-                      className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1.5 text-neutral-400 hover:bg-white/10 hover:text-orange-400"
+                      disabled={mencariGps}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1.5 text-neutral-400 hover:bg-white/10 hover:text-orange-400 disabled:cursor-wait disabled:opacity-60"
                       aria-label="Ambil lokasi GPS"
+                      title="Ambil lokasi saya sekarang"
                     >
-                      <MapPin className="size-4" />
+                      {mencariGps ? (
+                        <Loader2 className="size-4 animate-spin" />
+                      ) : (
+                        <MapPin className="size-4" />
+                      )}
                     </button>
                   </div>
-                </Field>
+                  {gpsInfo ? (
+                    <p
+                      className={`text-xs ${gpsInfo.galat ? "text-amber-400" : "text-green-400"}`}
+                    >
+                      {gpsInfo.teks}
+                    </p>
+                  ) : mencariGps ? (
+                    <p className="text-xs text-neutral-500">
+                      Mencari lokasi… izinkan akses lokasi kalau diminta
+                      browser.
+                    </p>
+                  ) : form.gps.trim() && !gpsAdaLink ? (
+                    <p className="text-xs text-amber-400">
+                      Belum berupa link atau koordinat, jadi belum tampil
+                      sebagai peta. Contoh koordinat: -8.1724, 113.6995
+                    </p>
+                  ) : null}
+                  {gpsAdaLink && (
+                    <a
+                      href={gpsLink}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="w-fit text-xs text-orange-400 underline"
+                    >
+                      Cek di Google Maps
+                    </a>
+                  )}
+                </div>
                 <Field label="Jam Acara" className="sm:col-span-2">
                   <input
                     className={inp}
