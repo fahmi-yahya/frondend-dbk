@@ -126,26 +126,29 @@ function ThemeToggle({ ringkas }: { ringkas: boolean }) {
 /* ------------------------------------------------------------------ */
 
 // Logo DBK: dua gambar (hitam & terang); yang tampil dipilih lewat class di <html> (lihat tema-css.ts)
-function Logo({
-  mark = false,
-  className = "",
-}: {
-  mark?: boolean;
-  className?: string;
-}) {
-  const dasar = mark ? "/logo-dbk-mark" : "/logo-dbk";
+// File logo berwarna gelap (teks hitam, panah oranye). Hanya saat tema gelap
+// warnanya dibalik: teks jadi putih, panah tetap oranye. Di tema terang
+// (sidebar & top bar berlatar terang) logo dipakai apa adanya.
+const FILTER_LOGO_PUTIH = "invert(1) hue-rotate(180deg) brightness(1.2)";
+
+function Logo({ className = "" }: { className?: string }) {
+  const { tema } = useTheme();
+  const dasar = "/logo-dbk.png";
+  const style = tema === "dark" ? { filter: FILTER_LOGO_PUTIH } : undefined;
   return (
     <>
       <img
-        src={`${dasar}.png`}
+        src={dasar}
         alt="DBK Catering Service"
         className={`logo-gelap ${className}`}
+        style={style}
       />
       <img
-        src={`${dasar}-terang.png`}
+        src={dasar}
         alt=""
         aria-hidden="true"
         className={`logo-terang ${className}`}
+        style={style}
       />
     </>
   );
@@ -176,10 +179,7 @@ function SidebarContent({
             : "items-center justify-between"
         }`}
       >
-        <Logo
-          mark={ringkas}
-          className={ringkas ? "h-auto w-10" : "h-11 w-auto"}
-        />
+        <Logo className={ringkas ? "h-auto w-10" : "h-auto w-40"} />
         <button
           type="button"
           onClick={toggle}
@@ -350,7 +350,7 @@ export default function AppShell({
           >
             <Menu className="size-5" />
           </button>
-          <Logo className="h-8 w-auto" />
+          <Logo className="h-9 w-auto" />
         </div>
 
         <main className="min-w-0 flex-1 overflow-y-auto">{children}</main>

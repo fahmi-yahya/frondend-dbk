@@ -41,7 +41,6 @@ const formKosong = {
   jumlah: "",
   meja: "",
   taplak: "",
-  waiters: "",
   keterangan: "",
 };
 type Form = typeof formKosong;
@@ -192,7 +191,6 @@ export default function PesananBaruPage() {
     kebutuhan: [
       { label: "Jumlah Meja", nilai: form.meja },
       { label: "Warna Taplak", nilai: form.taplak },
-      { label: "Waiters", nilai: form.waiters },
     ],
     bonus,
     keterangan: form.keterangan,
@@ -270,7 +268,6 @@ export default function PesananBaruPage() {
         jumlah_pesanan: Number(form.jumlah),
         jumlah_meja: form.meja === "" ? null : Number(form.meja),
         warna_taplak: form.taplak || null,
-        waiters: form.waiters === "" ? null : Number(form.waiters),
         bonus,
         keterangan: form.keterangan || null,
       };
@@ -602,7 +599,7 @@ export default function PesananBaruPage() {
               <p className="mt-1 text-xs text-neutral-500">
                 Jumlah porsi, meja, dan perlengkapan.
               </p>
-              <div className="mt-4 grid gap-4 sm:grid-cols-2">
+              <div className="mt-4 grid gap-4 sm:grid-cols-3">
                 <Field label="Jumlah Pesanan">
                   <input
                     type="number"
@@ -617,16 +614,7 @@ export default function PesananBaruPage() {
                 <Field label="Warna Taplak">
                   <input className={inp} {...f("taplak")} />
                 </Field>
-                <Field label="Waiters">
-                  <input
-                    type="number"
-                    min={0}
-                    className={inp}
-                    {...f("waiters")}
-                  />
-                </Field>
-
-                <div className="flex flex-col gap-1.5 sm:col-span-2">
+                <div className="flex flex-col gap-1.5 sm:col-span-3">
                   <span className="text-xs text-neutral-400">Bonus</span>
                   <div className="relative">
                     <input
@@ -672,7 +660,7 @@ export default function PesananBaruPage() {
                   )}
                 </div>
 
-                <Field label="Keterangan Tambahan" className="sm:col-span-2">
+                <Field label="Keterangan Tambahan" className="sm:col-span-3">
                   <textarea rows={3} className={inp} {...f("keterangan")} />
                 </Field>
               </div>

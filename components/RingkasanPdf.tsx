@@ -31,17 +31,27 @@ const garis = "#d4d4d4";
 const s = StyleSheet.create({
   halaman: {
     padding: 36,
-    fontSize: 10,
+    fontSize: 12,
     fontFamily: "Helvetica",
     color: "#171717",
   },
   // lineHeight sengaja di sini, bukan di style Page: di react-pdf, lineHeight di Page
   // membuat teks footer (nomor halaman) tidak tampil.
-  isi: { fontSize: 10, lineHeight: 1.35 },
-  kepala: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" },
-  logo: { height: 46 },
-  namaUsaha: { fontSize: 14, fontFamily: "Helvetica-Bold" },
-  judulDok: { fontSize: 8, fontFamily: "Helvetica-Bold", color: abu, letterSpacing: 1.5, textAlign: "right" },
+  isi: { fontSize: 12, lineHeight: 1.35 },
+  kepala: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+  },
+  logo: { height: 50 },
+  namaUsaha: { fontSize: 17, fontFamily: "Helvetica-Bold" },
+  judulDok: {
+    fontSize: 9.5,
+    fontFamily: "Helvetica-Bold",
+    color: abu,
+    letterSpacing: 1.5,
+    textAlign: "right",
+  },
   nomor: {
     marginTop: 4,
     borderWidth: 1,
@@ -50,7 +60,7 @@ const s = StyleSheet.create({
     paddingVertical: 3,
     paddingHorizontal: 8,
     fontFamily: "Courier",
-    fontSize: 10,
+    fontSize: 12,
     alignSelf: "flex-end",
   },
   bagian: {
@@ -66,37 +76,56 @@ const s = StyleSheet.create({
     backgroundColor: "#f5f5f5",
     borderBottomWidth: 1,
     borderBottomColor: garis,
-    paddingVertical: 5,
-    paddingHorizontal: 8,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
   },
   bulat: {
-    width: 14,
-    height: 14,
-    borderRadius: 7,
+    width: 16,
+    height: 16,
+    borderRadius: 8,
     backgroundColor: "#171717",
     justifyContent: "center",
     alignItems: "center",
     marginRight: 6,
   },
-  angka: { color: "#fff", fontSize: 8, lineHeight: 1, fontFamily: "Helvetica-Bold", textAlign: "center", marginTop: 1 },
-  teksJudul: { fontSize: 8, lineHeight: 1, fontFamily: "Helvetica-Bold", color: "#404040", letterSpacing: 0.8, marginTop: 1 },
-  baris: { flexDirection: "row", paddingVertical: 5, paddingHorizontal: 8 },
+  angka: {
+    color: "#fff",
+    fontSize: 9.5,
+    lineHeight: 1,
+    fontFamily: "Helvetica-Bold",
+    textAlign: "center",
+    marginTop: 1,
+  },
+  teksJudul: {
+    fontSize: 9.5,
+    lineHeight: 1,
+    fontFamily: "Helvetica-Bold",
+    color: "#404040",
+    letterSpacing: 0.8,
+    marginTop: 1,
+  },
+  baris: { flexDirection: "row", paddingVertical: 6, paddingHorizontal: 10 },
   garisAtas: { borderTopWidth: 1, borderTopColor: "#e5e5e5" },
   label: { width: "36%", color: abu, paddingRight: 8 },
   nilai: { flex: 1 },
   sorot: { backgroundColor: "#fafafa" },
   tebal: { fontFamily: "Helvetica-Bold" },
-  labelIsi: { fontSize: 8, color: abu, marginBottom: 3 },
+  labelIsi: { fontSize: 10, color: abu, marginBottom: 3 },
   kolomIsi: { flexDirection: "row" },
-  itemIsi: { flexDirection: "row", marginBottom: 1.5, paddingRight: 6 },
-  titik: { width: 9, color: "#a3a3a3" },
-  isiBagian: { paddingVertical: 5, paddingHorizontal: 8 },
+  itemIsi: { flexDirection: "row", marginBottom: 2, paddingRight: 6 },
+  titik: { width: 10, color: "#a3a3a3" },
+  isiBagian: { paddingVertical: 6, paddingHorizontal: 10 },
+  kolomBaris: { flexDirection: "row", backgroundColor: "#fafafa" },
+  sel: { flex: 1, paddingVertical: 6, paddingHorizontal: 10 },
+  selGaris: { borderLeftWidth: 1, borderLeftColor: "#e5e5e5" },
+  labelKolom: { fontSize: 10, color: abu, marginBottom: 2 },
+  nilaiKolom: { fontSize: 13, fontFamily: "Helvetica-Bold" },
   nomorHalaman: {
     position: "absolute",
     bottom: 16,
     left: 36,
     right: 36,
-    fontSize: 8,
+    fontSize: 9,
     color: abu,
     textAlign: "center",
   },
@@ -128,6 +157,19 @@ function IsiPaket({ nilai }: { nilai: string }) {
 function BarisPdf({ r, pertama }: { r: Baris; pertama: boolean }) {
   const garisAtas = pertama ? {} : s.garisAtas;
 
+  if (r.tipe === "kolom") {
+    return (
+      <View style={[s.kolomBaris, garisAtas]} wrap={false}>
+        {(r.kolom ?? []).map((k, i) => (
+          <View key={k.label} style={[s.sel, i > 0 ? s.selGaris : {}]}>
+            <Text style={s.labelKolom}>{k.label}</Text>
+            <Text style={s.nilaiKolom}>{k.nilai || "-"}</Text>
+          </View>
+        ))}
+      </View>
+    );
+  }
+
   if (r.tipe === "isi") {
     return (
       <View style={[s.isiBagian, garisAtas]} wrap={false}>
@@ -138,7 +180,10 @@ function BarisPdf({ r, pertama }: { r: Baris; pertama: boolean }) {
   }
 
   return (
-    <View style={[s.baris, garisAtas, r.tipe === "sorot" ? s.sorot : {}]} wrap={false}>
+    <View
+      style={[s.baris, garisAtas, r.tipe === "sorot" ? s.sorot : {}]}
+      wrap={false}
+    >
       <Text style={s.label}>{r.label}</Text>
       <View style={s.nilai}>
         {r.tipe === "peta" ? (
@@ -146,7 +191,9 @@ function BarisPdf({ r, pertama }: { r: Baris; pertama: boolean }) {
             {r.nilai}
           </Link>
         ) : (
-          <Text style={r.tipe === "sorot" ? s.tebal : undefined}>{r.nilai}</Text>
+          <Text style={r.tipe === "sorot" ? s.tebal : undefined}>
+            {r.nilai}
+          </Text>
         )}
       </View>
     </View>
@@ -163,43 +210,50 @@ export function RingkasanPdf({
   const bagian = bagianDari(d, true);
 
   return (
-    <Document title={`Ringkasan Pesanan ${d.noPesanan}`} author="DBK Catering Service">
+    <Document
+      title={`Ringkasan Pesanan ${d.noPesanan}`}
+      author="DBK Catering Service"
+    >
       <Page size="A4" style={s.halaman}>
         <View style={s.isi}>
-        <View style={s.kepala}>
-          {logo ? (
-            // eslint-disable-next-line jsx-a11y/alt-text -- komponen Image milik react-pdf, tidak punya atribut alt
-            <Image src={logo} style={s.logo} />
-          ) : (
-            <Text style={s.namaUsaha}>DBK Catering Service</Text>
-          )}
-          <View>
-            <Text style={s.judulDok}>RINGKASAN PESANAN</Text>
-            <Text style={s.nomor}>{d.noPesanan}</Text>
-          </View>
-        </View>
-
-        {bagian.map((b, i) => (
-          <View key={b.judul} style={s.bagian} wrap={false}>
-            <View style={s.judulBagian}>
-              <View style={s.bulat}>
-                <Text style={s.angka}>{i + 1}</Text>
-              </View>
-              <Text style={s.teksJudul}>{b.judul.toUpperCase()}</Text>
-            </View>
-
-            {b.penutup ? (
-              <View style={s.isiBagian}>
-                {b.catatan ? <Text>{b.catatan}</Text> : null}
-                <Text style={{ color: "#525252", marginTop: b.catatan ? 4 : 0 }}>
-                  {KALIMAT_PENUTUP}
-                </Text>
-              </View>
+          <View style={s.kepala}>
+            {logo ? (
+              // eslint-disable-next-line jsx-a11y/alt-text -- komponen Image milik react-pdf, tidak punya atribut alt
+              <Image src={logo} style={s.logo} />
             ) : (
-              b.baris.map((r, j) => <BarisPdf key={r.label} r={r} pertama={j === 0} />)
+              <Text style={s.namaUsaha}>DBK Catering Service</Text>
             )}
+            <View>
+              <Text style={s.judulDok}>RINGKASAN PESANAN</Text>
+              <Text style={s.nomor}>{d.noPesanan}</Text>
+            </View>
           </View>
-        ))}
+
+          {bagian.map((b, i) => (
+            <View key={b.judul} style={s.bagian} wrap={false}>
+              <View style={s.judulBagian}>
+                <View style={s.bulat}>
+                  <Text style={s.angka}>{i + 1}</Text>
+                </View>
+                <Text style={s.teksJudul}>{b.judul.toUpperCase()}</Text>
+              </View>
+
+              {b.penutup ? (
+                <View style={s.isiBagian}>
+                  {b.catatan ? <Text>{b.catatan}</Text> : null}
+                  <Text
+                    style={{ color: "#525252", marginTop: b.catatan ? 4 : 0 }}
+                  >
+                    {KALIMAT_PENUTUP}
+                  </Text>
+                </View>
+              ) : (
+                b.baris.map((r, j) => (
+                  <BarisPdf key={r.label} r={r} pertama={j === 0} />
+                ))
+              )}
+            </View>
+          ))}
         </View>
         {/* Nomor halaman di bagian bawah tiap lembar */}
         <Text
@@ -228,7 +282,8 @@ async function muatLogo(src = "/logo-dbk.png"): Promise<string | null> {
     if (!blob.type.startsWith("image/")) return null;
     return await new Promise<string | null>((selesai) => {
       const baca = new FileReader();
-      baca.onload = () => selesai(typeof baca.result === "string" ? baca.result : null);
+      baca.onload = () =>
+        selesai(typeof baca.result === "string" ? baca.result : null);
       baca.onerror = () => selesai(null);
       baca.readAsDataURL(blob);
     });
@@ -243,7 +298,9 @@ const namaFile = (d: DataRingkasan) => {
       .replace(/[^\p{L}\p{N}]+/gu, "-")
       .replace(/^-+|-+$/g, "")
       .slice(0, 40);
-  const bagian = ["Pesanan", bersih(d.noPesanan), bersih(d.nama)].filter(Boolean);
+  const bagian = ["Pesanan", bersih(d.noPesanan), bersih(d.nama)].filter(
+    Boolean,
+  );
   return `${bagian.join("-")}.pdf`;
 };
 

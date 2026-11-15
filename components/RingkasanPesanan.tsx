@@ -88,8 +88,10 @@ export type Baris = {
   nilai: string;
   // isi : daftar hidangan (dipisah baris baru), tampil berkolom
   // peta: link Google Maps
-  // sorot: baris penting (jumlah pesanan)
-  tipe?: "isi" | "peta" | "sorot";
+  // sorot: baris penting
+  // kolom: beberapa isian berdampingan dalam satu baris (isinya di `kolom`)
+  tipe?: "isi" | "peta" | "sorot" | "kolom";
+  kolom?: Pasang[];
 };
 export type Bagian = {
   judul: string;
@@ -97,6 +99,11 @@ export type Bagian = {
   catatan?: string; // hanya untuk bagian "Catatan"
   penutup?: boolean; // true = bagian "Catatan"
 };
+
+// Isian yang digabung ke satu baris berkolom bersama Jumlah Pesanan
+const DI_KOLOM = ["Jumlah Meja", "Warna Taplak"];
+// Isian yang disembunyikan selama belum diisi (di form, cetak, maupun PDF)
+const OPSIONAL = ["Waiters"];
 
 export const KALIMAT_PENUTUP =
   "Terima kasih atas pesanan Anda! Kami siap melayani acara Anda.";
@@ -111,8 +118,20 @@ export function bagianDari(
   sembunyikanKosong: boolean,
 ): Bagian[] {
   const peta = d.gps.startsWith("http") ? d.gps : "";
+  const ada = (b: Baris) =>
+    b.tipe === "kolom"
+      ? (b.kolom ?? []).some((k) => k.nilai !== "")
+      : b.nilai !== "";
   const pilih = (daftar: Baris[]) =>
-    daftar.filter((b) => !sembunyikanKosong || b.nilai !== "");
+    daftar
+      .filter((b) => !sembunyikanKosong || ada(b))
+      .map((b) =>
+        sembunyikanKosong && b.tipe === "kolom"
+          ? { ...b, kolom: (b.kolom ?? []).filter((k) => k.nilai !== "") }
+          : b,
+      );
+  const kebutuhan = (label: string) =>
+    d.kebutuhan.find((k) => k.label === label)?.nilai ?? "";
 
   const semua: Bagian[] = [
     {
@@ -142,8 +161,21 @@ export function bagianDari(
     {
       judul: "Kebutuhan Acara",
       baris: [
-        { label: "Jumlah Pesanan", nilai: d.jumlah, tipe: "sorot" },
-        ...d.kebutuhan,
+        {
+          label: "Rincian",
+          nilai: "",
+          tipe: "kolom",
+          kolom: [
+            { label: "Jumlah Pesanan", nilai: d.jumlah },
+            { label: "Jumlah Meja", nilai: kebutuhan("Jumlah Meja") },
+            { label: "Warna Taplak", nilai: kebutuhan("Warna Taplak") },
+          ],
+        },
+        ...d.kebutuhan.filter(
+          (k) =>
+            !DI_KOLOM.includes(k.label) &&
+            !(OPSIONAL.includes(k.label) && k.nilai === ""),
+        ),
         { label: "Bonus", nilai: d.bonus.join(", ") },
       ],
     },
@@ -182,10 +214,10 @@ export function RingkasanPesanan({
 }) {
   const sembunyi = cetak || sembunyikanKosong;
   const bagian = bagianDari(d, sembunyi);
-  const py = cetak ? "py-1.5" : "py-2";
+  const py = cetak ? "py-1.5" : "py-2.5";
 
   return (
-    <article className="text-sm leading-relaxed text-neutral-900">
+    <article className="text-base leading-relaxed text-neutral-900">
       {/* Kepala: logo + nomor pesanan */}
       <header className="flex items-start justify-between gap-4">
         <img
@@ -195,10 +227,10 @@ export function RingkasanPesanan({
           className="h-14 w-auto"
         />
         <div className="text-right">
-          <p className="text-[11px] font-semibold uppercase tracking-widest text-neutral-500">
+          <p className="text-xs font-semibold uppercase tracking-widest text-neutral-500">
             Ringkasan Pesanan
           </p>
-          <p className="mt-1 inline-block rounded-md border border-neutral-300 px-2.5 py-1 font-mono text-sm">
+          <p className="mt-1 inline-block rounded-md border border-neutral-300 px-2.5 py-1 font-mono text-base">
             {d.noPesanan}
           </p>
         </div>
@@ -211,8 +243,8 @@ export function RingkasanPesanan({
             key={b.judul}
             className="break-inside-avoid overflow-hidden rounded-lg border border-neutral-300"
           >
-            <h3 className="flex items-center gap-2 border-b border-neutral-300 bg-neutral-100 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-neutral-700">
-              <span className="grid size-5 place-items-center rounded-full bg-neutral-900 text-[11px] font-semibold leading-none text-white">
+            <h3 className="flex items-center gap-2 border-b border-neutral-300 bg-neutral-100 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-neutral-700">
+              <span className="grid size-6 place-items-center rounded-full bg-neutral-900 text-xs font-semibold leading-none text-white">
                 {i + 1}
               </span>
               {b.judul}
@@ -234,9 +266,28 @@ export function RingkasanPesanan({
             ) : (
               <div className="divide-y divide-neutral-200">
                 {b.baris.map((r) =>
-                  r.tipe === "isi" ? (
+                  r.tipe === "kolom" ? (
+                    <div
+                      key={r.label}
+                      className="grid divide-x divide-neutral-200 bg-neutral-50"
+                      style={{
+                        gridTemplateColumns: `repeat(${r.kolom?.length || 1}, minmax(0, 1fr))`,
+                      }}
+                    >
+                      {r.kolom?.map((k) => (
+                        <div key={k.label} className={`min-w-0 px-3 ${py}`}>
+                          <p className="text-sm text-neutral-500">{k.label}</p>
+                          <p
+                            className={`mt-0.5 break-words font-semibold leading-snug ${cetak ? "text-base" : "text-lg"}`}
+                          >
+                            {k.nilai || strip}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  ) : r.tipe === "isi" ? (
                     <div key={r.label} className={`px-3 ${py}`}>
-                      <p className="text-xs text-neutral-500">{r.label}</p>
+                      <p className="text-sm text-neutral-500">{r.label}</p>
                       {r.nilai ? (
                         <ul
                           className={`mt-1.5 gap-x-6 ${cetak ? "columns-3" : "columns-2"}`}
@@ -324,7 +375,7 @@ const cssCetak = `
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
   }
-  #area-cetak article { font-size: 12px; line-height: 1.45; }
+  #area-cetak article { font-size: 14px; line-height: 1.45; }
 }
 `;
 

@@ -15,8 +15,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "DBK – Dapur Nusa",
-  description: "Sistem manajemen pesanan katering Dapur Nusa",
+  title: "DBK",
+  description: "Sistem manajemen pesanan katering ",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
